@@ -39,19 +39,19 @@ public class Installer {
     private File clientJsonFile;
     private File outputDirectory;
     public void run(String[] args) {
-        instance.init(args);
-        instance.confirm();
-        instance.readJson();
-        instance.createDirectories();
-        instance.copyFiles();
-        instance.downloadClient();
-        instance.downloadLibraries();
+        init(args);
+        confirm();
+        readJson();
+        createDirectories();
+        copyFiles();
+        downloadClient();
+        downloadLibraries();
         if (!skipAssetDownload) {
-            instance.downloadAssetJson();
-            instance.readAssetJson();
-            instance.downloadAllAssets();
+            downloadAssetJson();
+            readAssetJson();
+            downloadAllAssets();
         }
-        instance.finish();
+        finish();
     }
 
     public void init(String[] args) {

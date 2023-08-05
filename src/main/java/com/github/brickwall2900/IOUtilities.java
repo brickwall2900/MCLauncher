@@ -36,6 +36,18 @@ public class IOUtilities {
     }
 
     /**
+     * Downloads a file from the internet to a String
+     * @param url website to download a file
+     * @return the downloaded contents of a URL
+     * @throws IOException on URL connect failure
+     */
+    public static String downloadToString(URL url) throws IOException {
+        try (BufferedInputStream srcStream = new BufferedInputStream(url.openStream())) {
+            return new String(srcStream.readAllBytes());
+        }
+    }
+
+    /**
      * Reads the whole files contents into a String
      * @param file input file
      * @return the file contents
