@@ -232,13 +232,13 @@ public class Installer {
                 JsonObject object = element.getAsJsonObject();
                 String action = object.get("action").getAsString();
                 JsonObject os = object.getAsJsonObject("os");
-                String osName = os.get("name").getAsString();
-                String osArch = os.get("arch").getAsString();
+                JsonElement osName = os.get("name");
+                JsonElement osArch = os.get("arch");
                 if (action.equalsIgnoreCase("allow")) {
                     boolean osNameAllowed = osName == null;
                     boolean osArchAllowed = osArch == null;
                     if (osName != null) {
-                        switch (osName) {
+                        switch (osName.getAsString()) {
                             case "osx" ->
                                     osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("mac");
                             case "linux" ->
@@ -249,7 +249,7 @@ public class Installer {
                         }
                     }
                     if (osArch != null) {
-                        osArchAllowed = System.getProperty("os.arch").equalsIgnoreCase(osArch);
+                        osArchAllowed = System.getProperty("os.arch").equalsIgnoreCase(osArch.getAsString());
                     }
                     return osNameAllowed && osArchAllowed;
                 } else {
