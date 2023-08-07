@@ -5,6 +5,8 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Optional;
+import java.util.UUID;
 
 public class IOUtilities {
     public static final int DOWNLOAD_ATTEMPTS = 10;
@@ -56,6 +58,18 @@ public class IOUtilities {
      */
     public static String readFileToString(File file) throws IOException {
         return Files.readString(file.toPath());
+    }
+
+    /**
+     * Checks if the file's contents isn't empty
+     * @param file input file
+     * @return {@code true} if the file isn't empty, otherwise {@code false}
+     * @throws IOException on file read failure
+     */
+    public static boolean isFileNotEmpty(File file) throws IOException {
+        try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file))) {
+            return bis.read() != -1;
+        }
     }
 
     /**
@@ -144,5 +158,40 @@ public class IOUtilities {
             int dot = version.indexOf(".");
             if(dot != -1) { version = version.substring(0, dot); }
         } return Integer.parseInt(version);
+    }
+
+    /**
+     * Generates a UUID from the given string
+     * @param str input string
+     * @return generated UUID from string
+     */
+    public static UUID getUUIDFromString(String str) {
+        return UUID.nameUUIDFromBytes(str.getBytes());
+    }
+
+    /**
+     * Queries the currently running Java Virtual Machine binary path
+     * @return the binary path of the JVM
+     */
+    public static String getJavaVM() {
+        // Method 1 :: System.getProperty("java.home")
+        String javaPath = System.getProperty("java.home");
+        if (javaPath != null)
+            return '"' + javaPath + File.separatorChar + "bin" + File.separatorChar + (System.console() != null ? "java.exe" : "javaw.exe") + '"';
+
+        // Method 2 :: %JAVA_HOME%
+        javaPath = System.getenv("JAVA_HOME");
+        if (javaPath != null)
+            return '"' + javaPath + File.separatorChar + "bin" + File.separatorChar + (System.console() != null ? "java.exe" : "javaw.exe") + '"';
+
+        // Method 3 :: arguments?
+        Optional<String[]> args = ProcessHandle.current().info().arguments();
+        if (args.isPresent()) {
+            javaPath = args.get()[0];
+            return javaPath;
+        }
+
+        // no JVM can be found. how did this run anyway?
+        throw new NullPointerException("what kind of JVM is this?");
     }
 }
