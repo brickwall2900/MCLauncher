@@ -228,9 +228,7 @@ public class Installer {
 
     private boolean checkLibraryRules(JsonArray rules) {
         if (rules != null) {
-            Iterator<JsonElement> libraryElement = rules.iterator();
-            while (libraryElement.hasNext()) {
-                JsonElement element = libraryElement.next();
+            for (JsonElement element : rules) {
                 JsonObject object = element.getAsJsonObject();
                 String action = object.get("action").getAsString();
                 JsonObject os = object.getAsJsonObject("os");
