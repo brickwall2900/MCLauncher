@@ -6,10 +6,12 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.*;
 
+import static com.github.brickwall2900.IOUtilities.getJavaVersion;
 import static com.github.brickwall2900.IOUtilities.readFileToString;
 
 public class Launcher {
@@ -86,11 +88,18 @@ public class Launcher {
                 out.println("Inherits from: " + version);
                 readClientJson(new File(gameDirectory, "versions" + File.separatorChar + version + File.separatorChar + version + ".json"));
             }
+            JsonObject javaVersion = object.getAsJsonObject("javaVersion");
+            checkJavaVersion(javaVersion);
             JsonObject arguments = object.getAsJsonObject("arguments");
             out.printf("%s: Reading game arguments%n", jsonFile);
             readGameArguments(arguments);
             out.printf("%s: Reading JVM arguments%n", jsonFile);
             readJVMArguments(arguments);
+            JsonArray libraries = object.getAsJsonArray("libraries");
+            out.printf("%s: Reading classpath%n", jsonFile);
+            readClassPath(libraries);
+            out.printf("%s: Reading main class%n", jsonFile);
+            readMainClass(object);
         } catch (IOException e) {
             throw new RuntimeException("Error parsing/reading JSON file: " + jsonFile, e);
         }
@@ -101,6 +110,16 @@ public class Launcher {
      */
 
     private Map<String, String> gameArguments, jvmArguments;
+    private List<File> classPath;
+    private String mainClass;
+
+    private void checkJavaVersion(JsonObject javaVersionJson) {
+        int minecraft = javaVersionJson.get("majorVersion").getAsInt();
+        int java = getJavaVersion();
+        if (minecraft > java) {
+            throw new UnsupportedClassVersionError("Incompatible Java version for the chosen Minecraft client! (" + minecraft + " > " + java + ")");
+        }
+    }
 
     // never nester? Linus Torvalds is going to kill me...
     private void readGameArguments(JsonObject arguments) {
@@ -147,9 +166,8 @@ public class Launcher {
     private String[] confirmRule(JsonObject object) {
         JsonArray rules = object.getAsJsonArray("rules");
 
-        Iterator<JsonElement> ruleIterator = rules.iterator();
-        while (ruleIterator.hasNext()) {
-            JsonObject rule = ruleIterator.next().getAsJsonObject();
+        for (JsonElement element : rules) {
+            JsonObject rule = element.getAsJsonObject();
             String action = rule.get("action").getAsString();
             if (action.equals("allow")) {
                 JsonObject featureObject = rule.getAsJsonObject("features");
@@ -225,9 +243,7 @@ public class Launcher {
 
     private boolean checkOsRules(JsonArray rules) {
         if (rules != null) {
-            Iterator<JsonElement> ruleIterator = rules.iterator();
-            while (ruleIterator.hasNext()) {
-                JsonElement element = ruleIterator.next();
+            for (JsonElement element : rules) {
                 JsonObject object = element.getAsJsonObject();
                 String action = object.get("action").getAsString();
                 JsonObject os = object.getAsJsonObject("os");
@@ -239,11 +255,11 @@ public class Launcher {
                     if (osName != null) {
                         switch (osName.getAsString()) {
                             case "osx" ->
-                                osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("mac");
+                                    osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("mac");
                             case "linux" ->
-                                osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("nux");
+                                    osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("nux");
                             case "windows" ->
-                                osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
+                                    osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
                             default -> throw new IllegalStateException("Unexpected OS name: " + osName);
                         }
                     }
@@ -258,5 +274,30 @@ public class Launcher {
         }
         // ..?
         return true;
+    }
+
+    private void readClassPath(JsonArray libraries) {
+        if (classPath == null) {
+            classPath = new ArrayList<>();
+        }
+        for (JsonElement element : libraries) {
+            JsonObject object = element.getAsJsonObject();
+            if (checkOsRules(object.getAsJsonArray("rules"))) {
+                JsonObject downloads = object.getAsJsonObject("downloads");
+                JsonObject artifact = downloads.getAsJsonObject("artifact");
+                String path = artifact.get("path").getAsString();
+                File jarFile = new File(gameDirectory, "libraries" + File.separatorChar + path);
+                if (!jarFile.exists()) {
+                    throw new NullPointerException("Library: " + jarFile + " not found!");
+                }
+                classPath.add(jarFile);
+            }
+        }
+        out.println("Classpath: " + classPath);
+    }
+
+    private void readMainClass(JsonObject clientObj) {
+        mainClass = clientObj.get("mainClass").getAsString();
+        out.println("Main Class: " + mainClass);
     }
 }
