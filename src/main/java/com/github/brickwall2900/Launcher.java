@@ -28,6 +28,7 @@ public class Launcher {
         init(args);
         initFiles();
         readClientJson(clientJsonFile);
+        printInfo();
     }
 
     private String clientJson, username, gameDirectoryPath;
@@ -74,8 +75,6 @@ public class Launcher {
         out.println("gameDirectory -> " + gameDirectory);
     }
 
-
-
     public void readClientJson(File jsonFile) {
         out.println("Reading client.json: " + jsonFile);
         try {
@@ -89,7 +88,9 @@ public class Launcher {
                 readClientJson(new File(gameDirectory, "versions" + File.separatorChar + version + File.separatorChar + version + ".json"));
             }
             JsonObject javaVersion = object.getAsJsonObject("javaVersion");
-            checkJavaVersion(javaVersion);
+            if (javaVersion != null) {
+                checkJavaVersion(javaVersion);
+            }
             JsonObject arguments = object.getAsJsonObject("arguments");
             out.printf("%s: Reading game arguments%n", jsonFile);
             readGameArguments(arguments);
@@ -116,6 +117,7 @@ public class Launcher {
     private void checkJavaVersion(JsonObject javaVersionJson) {
         int minecraft = javaVersionJson.get("majorVersion").getAsInt();
         int java = getJavaVersion();
+        out.printf("You're running on Java %d. Minecraft requires Java %d or higher.%n", java, minecraft);
         if (minecraft > java) {
             throw new UnsupportedClassVersionError("Incompatible Java version for the chosen Minecraft client! (" + minecraft + " > " + java + ")");
         }
@@ -155,7 +157,6 @@ public class Launcher {
                 }
             }
         }
-        out.println("Game arguments: " + gameArguments);
     }
 
     private boolean checkYesOrNo() {
@@ -227,10 +228,13 @@ public class Launcher {
                     }
                 } else { // This MAY also work...
                     String name = element.getAsString();
-                    if (!name.contains("${")) {
+                                                                            // vvvv HACK BELOW vvvvv
+                    if (!name.contains("${") && elements.size() - 1 > i + 1 || name.startsWith("-cp")) {
                         element = elements.get(++i);
                         String value = element.getAsString();
                         this.jvmArguments.put(name, value);
+                    } else if (!name.contains("${") && elements.size() - 1 <= i + 1) {
+                        this.jvmArguments.put(name, null);
                     } else {
                         String[] nameValue = name.split("=");
                         this.jvmArguments.put(nameValue[0], nameValue[1]);
@@ -238,7 +242,6 @@ public class Launcher {
                 }
             }
         }
-        out.println("JVM arguments: " + jvmArguments);
     }
 
     private boolean checkOsRules(JsonArray rules) {
@@ -284,20 +287,42 @@ public class Launcher {
             JsonObject object = element.getAsJsonObject();
             if (checkOsRules(object.getAsJsonArray("rules"))) {
                 JsonObject downloads = object.getAsJsonObject("downloads");
-                JsonObject artifact = downloads.getAsJsonObject("artifact");
-                String path = artifact.get("path").getAsString();
-                File jarFile = new File(gameDirectory, "libraries" + File.separatorChar + path);
-                if (!jarFile.exists()) {
-                    throw new NullPointerException("Library: " + jarFile + " not found!");
+                if (downloads != null) {
+                    JsonObject artifact = downloads.getAsJsonObject("artifact");
+                    String path = artifact.get("path").getAsString();
+                    File jarFile = new File(gameDirectory, "libraries" + File.separatorChar + path);
+                    if (!jarFile.exists()) {
+                        throw new NullPointerException("Library: " + jarFile + " not found!");
+                    }
+                    classPath.add(jarFile);
+                } else { // iF 'DownloadS' is nULL, TheN thIs MIgHt wORk RiGhT?
+                    String name = object.get("name").getAsString();
+                    String[] comp = name.split(":");
+                    comp[0] = comp[0].replace('.', File.separatorChar); // groupId
+                    String path = comp[0] + File.separatorChar + comp[1] + File.separatorChar + comp[2];
+                    File directoryJar = new File(gameDirectory, "libraries" + File.separatorChar + path);
+                    File[] jars = directoryJar.listFiles();
+                    if (jars != null) {
+                        for (File jar : jars) {
+                            if (!jar.exists()) {
+                                throw new NullPointerException("Library: " + jar + " not found!");
+                            }
+                            classPath.add(jar);
+                        }
+                    }
                 }
-                classPath.add(jarFile);
             }
         }
-        out.println("Classpath: " + classPath);
     }
 
     private void readMainClass(JsonObject clientObj) {
         mainClass = clientObj.get("mainClass").getAsString();
+    }
+
+    private void printInfo() {
+        out.println("Game Arguments: " + gameArguments);
+        out.println("JVM Arguments: " + jvmArguments);
+        out.println("Classpath: " + classPath);
         out.println("Main Class: " + mainClass);
     }
 }
