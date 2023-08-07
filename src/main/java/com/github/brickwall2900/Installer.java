@@ -22,15 +22,14 @@ public class Installer {
 //    necessary?
 //    private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
     public static final Installer instance = new Installer();
-    public static final int DOWNLOAD_ATTEMPTS = 10;
 
     public static void main(String[] args) {
         instance.run(args);
     }
 
 
-    // bad programming practice - don't do this
-    // ========================================
+    // bad programming practice!! - don't do this
+    // ==========================================
 
     private PrintStream out = System.out;
     private Scanner in = new Scanner(System.in);
@@ -79,7 +78,8 @@ public class Installer {
     }
 
     private boolean checkYesOrNo() {
-        return !confirmAll && in.nextLine().equalsIgnoreCase("yes");
+        String next = in.nextLine();
+        return !confirmAll && (next.equalsIgnoreCase("yes") || next.equalsIgnoreCase("y"));
     }
 
     public void confirm() {
@@ -235,19 +235,25 @@ public class Installer {
                 String action = object.get("action").getAsString();
                 JsonObject os = object.getAsJsonObject("os");
                 String osName = os.get("name").getAsString();
+                String osArch = os.get("arch").getAsString();
                 if (action.equalsIgnoreCase("allow")) {
-                    switch (osName) {
-                        case "osx" -> {
-                            return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("mac");
+                    boolean osNameAllowed = osName == null;
+                    boolean osArchAllowed = osArch == null;
+                    if (osName != null) {
+                        switch (osName) {
+                            case "osx" ->
+                                    osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("mac");
+                            case "linux" ->
+                                    osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("nux");
+                            case "windows" ->
+                                    osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
+                            default -> throw new IllegalStateException("Unexpected OS name: " + osName);
                         }
-                        case "linux" -> {
-                            return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("nux");
-                        }
-                        case "windows" -> {
-                            return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
-                        }
-                        default -> throw new IllegalStateException("Unexpected OS: " + osName);
                     }
+                    if (osArch != null) {
+                        osArchAllowed = System.getProperty("os.arch").equalsIgnoreCase(osArch);
+                    }
+                    return osNameAllowed && osArchAllowed;
                 } else {
                     throw new IllegalStateException("Unexpected action: " + action);
                 }

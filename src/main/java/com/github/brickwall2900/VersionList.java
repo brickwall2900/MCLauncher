@@ -45,7 +45,7 @@ public class VersionList {
     private JsonArray versionJsonArray;
     private List<JsonElement> versionJsonElementList;
 
-    public static final String VERSION_MANIFEST = "https://launchermeta.mojang.com/mc/game/version_manifest.json";
+    public static final String VERSION_MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
     public void getVersionJson() {
         try {
             out.println("Downloading version list...");
@@ -154,6 +154,7 @@ public class VersionList {
 
         String version = object.get("id").getAsString();
         String urlPath = object.get("url").getAsString();
+        String sha1 = object.get("sha1").getAsString();
 
         out.printf("Version chosen: %s%n", version);
         out.println("Downloading...");
@@ -172,10 +173,13 @@ public class VersionList {
 
         File outFile = new File(new File(path), version + ".json");
         out.printf("Target: %s%n", outFile);
-        try {
-            downloadToFile(url, outFile);
-        } catch (IOException e) {
-            throw new RuntimeException("Error in downloading version manifest!", e);
+        for (int i = 0; i < DOWNLOAD_ATTEMPTS && !checkFileIntegrity(outFile, sha1); i++) {
+            try {
+                downloadToFile(url, outFile);
+            } catch (IOException e) {
+                throw new RuntimeException("Error in downloading version manifest!", e);
+            }
         }
+        out.printf("%s downloaded and verified!%n", outFile);
     }
 }

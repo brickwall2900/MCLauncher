@@ -7,6 +7,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 public class IOUtilities {
+    public static final int DOWNLOAD_ATTEMPTS = 10;
     private IOUtilities() { throw new UnsupportedOperationException("No IOUtilities for you!"); }
 
     /**
@@ -68,6 +69,21 @@ public class IOUtilities {
     public static boolean checkFileIntegrity(File file, long size, String sha1) {
         try {
             return file != null && file.exists() && file.length() == size && sha1.equalsIgnoreCase(bytesToHex(getHash(file, SHA1_ALGORITHM)));
+        } catch (NoSuchAlgorithmException | IOException e) {
+            throw new RuntimeException("Error checking the file integrity of " + file + "!", e);
+        }
+    }
+
+    /**
+     * Checks the file's integrity based on the given parameters excluding size
+     * @param file input file to be verified
+     * @param sha1 correct SHA-1 of file
+     * @return {@code true} if the file matches the parameters, {@code false} otherwise
+     * @throws RuntimeException on error while checking
+     */
+    public static boolean checkFileIntegrity(File file, String sha1) {
+        try {
+            return file != null && file.exists() && sha1.equalsIgnoreCase(bytesToHex(getHash(file, SHA1_ALGORITHM)));
         } catch (NoSuchAlgorithmException | IOException e) {
             throw new RuntimeException("Error checking the file integrity of " + file + "!", e);
         }
