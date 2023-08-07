@@ -6,13 +6,11 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.*;
 
-import static com.github.brickwall2900.IOUtilities.getJavaVersion;
-import static com.github.brickwall2900.IOUtilities.readFileToString;
+import static com.github.brickwall2900.IOUtilities.*;
 
 public class Launcher {
     public static final Launcher instance = new Launcher();
@@ -24,14 +22,22 @@ public class Launcher {
     private PrintStream out = System.out;
     private Scanner in = new Scanner(System.in);
 
+    // wooo time to freeload Minecraft!
     public void run(String[] args) {
         init(args);
         initFiles();
         readClientJson(clientJsonFile);
         printInfo();
+        setGameArguments();
+        setJVMArguments();
+        parseGameArguments();
+        parseJVMArguments();
+        createProcessBuilder();
+        startMinecraft();
     }
 
     private String clientJson, username, gameDirectoryPath;
+    private String extraGameArguments, extraJVMArguments;
     private boolean confirmAll;
 
     public void init(String[] args) {
@@ -51,13 +57,20 @@ public class Launcher {
                 if (arg.equalsIgnoreCase("-y") || arg.equalsIgnoreCase("--confirm-yes")) {
                     confirmAll = true;
                 }
+                if (arg.startsWith("--extra-game-args=") || arg.startsWith("-ega=")) {
+                    extraGameArguments = arg.split("=")[1];
+                }
+                if (arg.startsWith("--extra-java-args=") || arg.startsWith("-eja=")) {
+                    extraJVMArguments = arg.split("=")[1];
+                }
             }
         } catch (ArrayIndexOutOfBoundsException e) {
             throw new IllegalArgumentException("Invalid argument at \"" + lastParsed + '\"');
         }
         if (clientJson == null || username == null || gameDirectoryPath == null) {
-            System.err.println("Usage: Launcher [--client-json=<client json file>] [--username=<player name>] [--game-directory=<.minecraft game directory>]");
-            System.err.println(" ..or: Launcher [-client=<client json file>] [--name=<player name>] [-game-dir=<.minecraft game directory>]");
+            System.err.println("Usage: Launcher [--client-json=<client json file>] [--username=<player name>] [--game-directory=<.minecraft game directory>] [--extra-game-args=<extra game arguments>]? [--extra-java-args=<extra JVM arguments>]? --confirm-yes?");
+            System.err.println(" ..or: Launcher [-client=<client json file>] [--name=<player name>] [-game-dir=<.minecraft game directory>] [-ega=<extra game arguments>]? [-eja=<extra JVM arguments>]? -y?");
+            System.err.println("'?' means this is optional.");
             throw new NullPointerException("One or more arguments are missing!");
         }
         if (confirmAll) {
@@ -91,6 +104,7 @@ public class Launcher {
             if (javaVersion != null) {
                 checkJavaVersion(javaVersion);
             }
+            String version = object.get("id").getAsString();
             JsonObject arguments = object.getAsJsonObject("arguments");
             out.printf("%s: Reading game arguments%n", jsonFile);
             readGameArguments(arguments);
@@ -98,9 +112,12 @@ public class Launcher {
             readJVMArguments(arguments);
             JsonArray libraries = object.getAsJsonArray("libraries");
             out.printf("%s: Reading classpath%n", jsonFile);
-            readClassPath(libraries);
+            readClassPath(version, libraries);
             out.printf("%s: Reading main class%n", jsonFile);
             readMainClass(object);
+            preGameSetArguments(object);
+            preJVMSetArguments(object);
+            versionAliases.add(version);
         } catch (IOException e) {
             throw new RuntimeException("Error parsing/reading JSON file: " + jsonFile, e);
         }
@@ -279,7 +296,10 @@ public class Launcher {
         return true;
     }
 
-    private void readClassPath(JsonArray libraries) {
+    // okay screw this
+    private List<String> versionAliases = new ArrayList<>();
+
+    private void readClassPath(String version, JsonArray libraries) {
         if (classPath == null) {
             classPath = new ArrayList<>();
         }
@@ -324,5 +344,187 @@ public class Launcher {
         out.println("JVM Arguments: " + jvmArguments);
         out.println("Classpath: " + classPath);
         out.println("Main Class: " + mainClass);
+    }
+
+    private void preGameSetArguments(JsonObject clientJson) {
+        out.println("Setting some game arguments...");
+        String version = clientJson.get("id").getAsString();
+        gameArguments.put("--version", version);
+//        // I dont know???
+//        if (version.chars().filter(i -> i == '.').count() >= 2) {
+//            gameArguments.put("--assetIndex", version.substring(0, version.lastIndexOf('.')));
+//        } else {
+//            gameArguments.put("--assetIndex", version);
+//        }
+        gameArguments.put("--assetIndex", "5"); // ..?
+        gameArguments.put("--versionType", clientJson.get("type").getAsString());
+    }
+
+    private void preJVMSetArguments(JsonObject clientJson) {
+        out.println("Setting some JVM arguments...");
+        String version = clientJson.get("id").getAsString();
+        File natives = new File(gameDirectory, "versions" + File.separatorChar + version + File.separatorChar + "natives");
+        String path;
+        try {
+            path = natives.getCanonicalPath();
+        } catch (IOException e) {
+            if (!natives.exists()) throw new RuntimeException("'natives' doesn't exist on version directory!");
+            path = natives.getAbsolutePath();
+        }
+        path = '\"' + path + '\"';
+
+        jvmArguments.put("-Djava.library.path", path);
+        jvmArguments.put("-Djna.tmpdir", path);
+        jvmArguments.put("-Dorg.lwjgl.system.SharedLibraryExtractPath", path);
+        jvmArguments.put("-Dio.netty.native.workdir", path);
+
+        // fabric fix
+        if (jvmArguments.containsKey("-DFabricMcEmu= net.minecraft.client.main.Main ")) {
+            jvmArguments.remove("-DFabricMcEmu= net.minecraft.client.main.Main ");
+            jvmArguments.put("-DFabricMcEmu=net.minecraft.client.main.Main", null);
+        }
+    }
+
+    public void setGameArguments() {
+        out.println("Setting more game arguments...");
+        gameArguments.put("--username", username);
+        gameArguments.put("--gameDir", '\"' + gameDirectory.getAbsolutePath() + '\"');
+        gameArguments.put("--assetsDir", '\"' + new File(gameDirectory, "assets").getAbsolutePath() + '\"');
+        gameArguments.put("--uuid", getUUIDFromString(username).toString().replace("-", ""));
+        gameArguments.put("--accessToken", "null");
+        gameArguments.put("--clientId", "0");
+        gameArguments.put("--xuid", "0");
+        gameArguments.put("--userType", "mojang");
+
+        Map<String, String> copyArgs = new HashMap<>(gameArguments);
+        for (Map.Entry<String, String> entry : copyArgs.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            if (value.contains("${")) {
+                out.printf("%s is uninitialized yet. Enter a value for this argument (%s %s): ", key, key, value);
+                gameArguments.put(key, in.nextLine());
+            }
+        }
+
+        out.println("New Game Arguments: " + gameArguments);
+    }
+
+    public void setJVMArguments() {
+        out.println("Setting more JVM arguments...");
+
+        // we add the Minecraft jar file here
+
+        // well we're expecting that the version is present on the 'versions' folder
+        // and is right next to the client.json file we're parsing
+        // let's poke around and see what happens!
+        for (String versions : versionAliases) {
+            // we'll go loop around the versions here, so we find a client that exists and works.
+            File clientJar = new File(gameDirectory, "versions" + File.separatorChar + versions + File.separatorChar + versions + ".jar");
+            if (clientJar.exists()) {
+                try {
+                    if (isFileNotEmpty(clientJar)) {
+                        // okay we chose this one I hope this is a JAR file
+                        // ... and hopefully not malware... I hope.
+                        classPath.add(clientJar);
+                        out.println("Found client: " + clientJar);
+                        break;
+                    }
+                } catch (IOException e) {
+                    /* we're not choosing this version I guess */
+                }
+            }
+        }
+
+        String classPathList = classPath.stream().map(f -> {
+            try {
+                return f.getCanonicalFile();
+            } catch (IOException e) {
+                return f;
+            }
+        }).map(File::toString).reduce("", (result, file) -> '\"' + file + "\";" + result);
+        jvmArguments.put("-cp", classPathList);
+
+        jvmArguments.put("-Dminecraft.launcher.brand", "minecraft-launcher");
+        jvmArguments.put("-Dminecraft.launcher.version", "2.3.173");
+
+        out.println("New JVM Arguments: " + jvmArguments);
+    }
+
+    private List<String> gameArgumentList, jvmArgumentList;
+
+    public void parseGameArguments() {
+        out.println("Parsing game argumnets...");
+        gameArgumentList = new ArrayList<>();
+        for (Map.Entry<String, String> argEntry : gameArguments.entrySet()) {
+            String key = argEntry.getKey();
+            String value = argEntry.getValue();
+            gameArgumentList.add(key);
+            if (value != null) {
+                gameArgumentList.add(value);
+            }
+        }
+        gameArgumentList.addAll(extraArgumentsToList(extraGameArguments));
+    }
+
+    public void parseJVMArguments() {
+        out.println("Parsing JVM argumnets...");
+        jvmArgumentList = new ArrayList<>();
+        for (Map.Entry<String, String> argEntry : jvmArguments.entrySet()) {
+            String key = argEntry.getKey();
+            String value = argEntry.getValue();
+            if (key.equals("-cp")) {
+                jvmArgumentList.add("-cp");
+                jvmArgumentList.add(value);
+            } else if (value != null) {
+                jvmArgumentList.add(key + '=' + value);
+            } else {
+                jvmArgumentList.add(key);
+            }
+        }
+        jvmArgumentList.addAll(extraArgumentsToList(extraJVMArguments));
+    }
+
+    private ProcessBuilder builder;
+
+    public void createProcessBuilder() {
+        out.println("Creating builder for process...");
+        builder = new ProcessBuilder();
+        builder.directory(gameDirectory);
+        List<String> allArguments = new ArrayList<>();
+        String jvmPath = getJavaVM();
+        allArguments.add(jvmPath);
+        allArguments.addAll(jvmArgumentList);
+        allArguments.add(mainClass);
+        allArguments.addAll(gameArgumentList);
+        builder.command(allArguments);
+        out.println("Final command: ");
+        for (String s : allArguments) out.print(s + " ");
+        out.println();
+        out.print("Are you ready to launch Minecraft? (yes/no) ");
+        if (!checkYesOrNo()) {
+            out.println("Okay...");
+            System.exit(0);
+        }
+    }
+
+    private List<String> extraArgumentsToList(String extra) {
+        if (extra != null) {
+            return new ArrayList<>(Arrays.asList(extra.split("\\s+(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)")));
+        } else {
+            return Collections.emptyList();
+        }
+    }
+
+    private Process process;
+
+    public void startMinecraft() {
+        out.println("Here we go!");
+        out.println();
+        try {
+            process = builder.inheritIO().start();
+            process.waitFor();
+        } catch (IOException | InterruptedException e) {
+            throw new RuntimeException("An error occured starting Minecraft!");
+        }
     }
 }
