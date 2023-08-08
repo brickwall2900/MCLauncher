@@ -12,7 +12,7 @@ import java.util.*;
 
 import static com.github.brickwall2900.IOUtilities.*;
 
-public class Launcher {
+public class Launcher implements LauncherProcess {
     public static final Launcher instance = new Launcher();
 
     public static void main(String[] args) {

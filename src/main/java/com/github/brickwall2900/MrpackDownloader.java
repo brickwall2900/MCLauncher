@@ -17,7 +17,7 @@ import java.util.zip.ZipFile;
 
 import static com.github.brickwall2900.IOUtilities.*;
 
-public class MrpackDownloader {
+public class MrpackDownloader implements LauncherProcess {
     public static final MrpackDownloader instance = new MrpackDownloader();
 
     public static void main(String[] args) {

@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static com.github.brickwall2900.IOUtilities.*;
 
-public class Installer {
+public class Installer implements LauncherProcess {
 //    necessary?
 //    private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
     public static final Installer instance = new Installer();

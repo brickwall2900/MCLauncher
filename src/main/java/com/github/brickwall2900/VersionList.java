@@ -15,7 +15,7 @@ import java.util.Scanner;
 
 import static com.github.brickwall2900.IOUtilities.*;
 
-public class VersionList {
+public class VersionList implements LauncherProcess {
     public static final VersionList instance = new VersionList();
 
     public static void main(String[] args) {
