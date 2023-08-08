@@ -54,20 +54,32 @@ public class Installer {
     }
 
     public void init(String[] args) {
-        if (args.length < 2) {
-            throw new IllegalArgumentException("Usage: Main [clientJsonFile] [outDirectory]");
+        String lastParsed = null;
+        try {
+            for (String arg : args) {
+                lastParsed = arg;
+                if (arg.equalsIgnoreCase("-y") || arg.equalsIgnoreCase("--confirm-yes")) confirmAll = true;
+                if (arg.equalsIgnoreCase("-sa") || arg.equalsIgnoreCase("--skip-assets")) skipAssetDownload = true;
+                if (arg.startsWith("--client-json=") || arg.startsWith("-client=")) {
+                    clientJsonFile = new File(arg.split("=")[1]);
+                }
+                if (arg.startsWith("--out-directory=") || arg.startsWith("-dir=")) {
+                    outputDirectory = new File(arg.split("=")[1]);
+                }
+            }
+        } catch (ArrayIndexOutOfBoundsException e) {
+            throw new IllegalArgumentException("Invalid argument at \"" + lastParsed + '\"');
         }
 
-        clientJsonFile = new File(args[0]);
-        outputDirectory = new File(args[1]);
+        if (clientJsonFile == null || outputDirectory == null) {
+            System.err.println("Usage: Installer [--client-json=<client json file>] [--out-directory=<output game directory>] --confirm-yes? --skip-assets?");
+            System.err.println(" ..or: Installer [-client=<client json file>] [-dir=<output game directory>] -y? -sa?");
+            System.err.println("'?' means this is optional.");
+            throw new NullPointerException("One or more arguments are missing!");
+        }
 
         out.printf("clientJsonFile -> %s%n", clientJsonFile);
         out.printf("outputDirectory -> %s%n", outputDirectory);
-
-        for (String arg : args) {
-            if (arg.equalsIgnoreCase("-y") || arg.equalsIgnoreCase("--confirm-yes")) confirmAll = true;
-            if (arg.equalsIgnoreCase("-sa") || arg.equalsIgnoreCase("--skip-assets")) skipAssetDownload = true;
-        }
 
         if (confirmAll) {
             out.println("Confirming 'yes' to all questions!");
