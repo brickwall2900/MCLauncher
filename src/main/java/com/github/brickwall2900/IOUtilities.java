@@ -76,13 +76,14 @@ public class IOUtilities {
      * Check the file's integrity based on the given parameters
      * @param file input file to be verified
      * @param size correct file size
-     * @param sha1 correct SHA-1 of file
+     * @param hash correct hash of file
+     * @param algorithm algorithm for checking file hash
      * @return {@code true} if the file matches the parameters, {@code false} otherwise
      * @throws RuntimeException on error while checking
      */
-    public static boolean checkFileIntegrity(File file, long size, String sha1) {
+    public static boolean checkFileIntegrity(File file, long size, String hash, String algorithm) {
         try {
-            return file != null && file.exists() && file.length() == size && sha1.equalsIgnoreCase(bytesToHex(getHash(file, SHA1_ALGORITHM)));
+            return file != null && file.exists() && file.length() == size && hash.equalsIgnoreCase(bytesToHex(getHash(file, algorithm)));
         } catch (NoSuchAlgorithmException | IOException e) {
             throw new RuntimeException("Error checking the file integrity of " + file + "!", e);
         }
@@ -91,13 +92,14 @@ public class IOUtilities {
     /**
      * Checks the file's integrity based on the given parameters excluding size
      * @param file input file to be verified
-     * @param sha1 correct SHA-1 of file
+     * @param hash correct hash of file
+     * @param algorithm algorithm for checking file hashZ
      * @return {@code true} if the file matches the parameters, {@code false} otherwise
      * @throws RuntimeException on error while checking
      */
-    public static boolean checkFileIntegrity(File file, String sha1) {
+    public static boolean checkFileIntegrity(File file, String hash, String algorithm) {
         try {
-            return file != null && file.exists() && sha1.equalsIgnoreCase(bytesToHex(getHash(file, SHA1_ALGORITHM)));
+            return file != null && file.exists() && hash.equalsIgnoreCase(bytesToHex(getHash(file, algorithm)));
         } catch (NoSuchAlgorithmException | IOException e) {
             throw new RuntimeException("Error checking the file integrity of " + file + "!", e);
         }
@@ -105,6 +107,7 @@ public class IOUtilities {
 
 
     public static final String SHA1_ALGORITHM = "SHA-1";
+    public static final String SHA512_ALGORITHM = "SHA-512";
     public static final int BUFFER_SIZE = 8192;
 
     /**
