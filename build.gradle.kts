@@ -6,7 +6,7 @@ plugins {
 group = "com.github.brickwall2900"
 version = "1.0-SNAPSHOT"
 
-val mainClassName = "com.github.brickwall2900.Main"
+val mainClassName = "MCLauncher"
 if (!hasProperty("mainClass")) {
     extra["mainClass"] = mainClassName
 }
