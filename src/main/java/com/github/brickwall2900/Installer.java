@@ -200,11 +200,11 @@ public class Installer {
         }
 
         clientJarDest = new File(currentVersionFolder, versionName + ".jar");
-        if (clientJarDest.exists() && checkFileIntegrity(clientJarDest, size, sha1)) {
+        if (clientJarDest.exists() && checkFileIntegrity(clientJarDest, size, sha1, SHA1_ALGORITHM)) {
             out.println("client.jar is already downloaded and verified!");
             return;
         }
-        for (int i = 0; i < DOWNLOAD_ATTEMPTS && !checkFileIntegrity(clientJarDest, size, sha1); i++) {
+        for (int i = 0; i < DOWNLOAD_ATTEMPTS && !checkFileIntegrity(clientJarDest, size, sha1, SHA1_ALGORITHM); i++) {
             try {
                 downloadToFile(url, clientJarDest);
             } catch (IOException e) {
@@ -285,11 +285,11 @@ public class Installer {
         Path folderDestPath = dest.toPath().getParent();
         File folderDest = folderDestPath.toFile();
         folderDest.mkdirs();
-        if (dest.exists() && checkFileIntegrity(dest, size, sha1)) {
+        if (dest.exists() && checkFileIntegrity(dest, size, sha1, SHA1_ALGORITHM)) {
             out.printf("%s is already downloaded and verified!%n", name);
             return;
         }
-        for (int i = 0; i < DOWNLOAD_ATTEMPTS && !checkFileIntegrity(dest, size, sha1); i++) {
+        for (int i = 0; i < DOWNLOAD_ATTEMPTS && !checkFileIntegrity(dest, size, sha1, SHA1_ALGORITHM); i++) {
             try {
                 downloadToFile(url, dest);
             } catch (IOException e) {
@@ -319,11 +319,11 @@ public class Installer {
         Path folderDestPath = assetJsonDest.toPath().getParent();
         File folderDest = folderDestPath.toFile();
         folderDest.mkdirs();
-        if (assetJsonDest.exists() && checkFileIntegrity(assetJsonDest, size, sha1)) {
+        if (assetJsonDest.exists() && checkFileIntegrity(assetJsonDest, size, sha1, SHA1_ALGORITHM)) {
             out.println("asset.json is already downloaded and verified!");
             return;
         }
-        for (int i = 0; i < DOWNLOAD_ATTEMPTS && !checkFileIntegrity(assetJsonDest, size, sha1); i++) {
+        for (int i = 0; i < DOWNLOAD_ATTEMPTS && !checkFileIntegrity(assetJsonDest, size, sha1, SHA1_ALGORITHM); i++) {
             try {
                 downloadToFile(url, assetJsonDest);
             } catch (IOException e) {
@@ -404,11 +404,11 @@ public class Installer {
         Path folderDestPath = downloadedAsset.toPath().getParent();
         File folderDest = folderDestPath.toFile();
         folderDest.mkdirs();
-        if (downloadedAsset.exists() && checkFileIntegrity(downloadedAsset, size, hash)) {
+        if (downloadedAsset.exists() && checkFileIntegrity(downloadedAsset, size, hash, SHA1_ALGORITHM)) {
             assetCount.getAndIncrement();
             return size;
         }
-        for (int i = 0; i < DOWNLOAD_ATTEMPTS && !checkFileIntegrity(downloadedAsset, size, hash); i++) {
+        for (int i = 0; i < DOWNLOAD_ATTEMPTS && !checkFileIntegrity(downloadedAsset, size, hash, SHA1_ALGORITHM); i++) {
             try {
                 downloadToFile(url, downloadedAsset);
             } catch (IOException e) {

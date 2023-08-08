@@ -173,7 +173,7 @@ public class VersionList {
 
         File outFile = new File(new File(path), version + ".json");
         out.printf("Target: %s%n", outFile);
-        for (int i = 0; i < DOWNLOAD_ATTEMPTS && !checkFileIntegrity(outFile, sha1); i++) {
+        for (int i = 0; i < DOWNLOAD_ATTEMPTS && !checkFileIntegrity(outFile, sha1, SHA1_ALGORITHM); i++) {
             try {
                 downloadToFile(url, outFile);
             } catch (IOException e) {
