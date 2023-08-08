@@ -356,10 +356,10 @@ public class Installer {
         AtomicLong size = new AtomicLong();
         Thread downloadThread = startAssetDownloadThread(size);
         while (downloadThread.isAlive()) {
-            out.printf("Progress: %d/%d%n", assetCount.get(), assetObjectMap.size());
             try {
                 Thread.sleep(3000);
             } catch (InterruptedException e) {}
+            out.printf("Progress: %d/%d%n", assetCount.get(), assetObjectMap.size());
         }
         out.printf("Downloaded %d assets! (%d bytes)%n", assetCount.get(), size.get());
     }
