@@ -26,6 +26,20 @@ public class IOUtilities {
     }
 
     /**
+     * Copies from {@code src} input stream to the target {@code dest}
+     * @param src input stream source
+     * @param dest file destination
+     * @throws IOException on IO read/write failure
+     * @apiNote The input stream is automatically closed after copying.
+     */
+    public static void copyStreamToFile(InputStream src, File dest) throws IOException {
+        try (BufferedInputStream srcStream = new BufferedInputStream(src);
+             BufferedOutputStream destStream = new BufferedOutputStream(new FileOutputStream(dest))) {
+            srcStream.transferTo(destStream);
+        }
+    }
+
+    /**
      * Downloads a file from the internet given {@code url} and writes it onto file {@code dest}
      * @param url website to download a file
      * @param dest file destination
@@ -196,5 +210,9 @@ public class IOUtilities {
 
         // no JVM can be found. how did this run anyway?
         throw new NullPointerException("what kind of JVM is this?");
+    }
+
+    public static void _breakpoint() {
+        System.err.println("We just reached a debug breakpoint!");
     }
 }

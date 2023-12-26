@@ -15,6 +15,8 @@ import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.jar.JarFile;
+import java.util.zip.ZipFile;
 
 import static com.github.brickwall2900.IOUtilities.*;
 
@@ -109,7 +111,7 @@ public class Installer implements LauncherProcess {
 
 
     private File assetFolder, libraryFolder, versionFolder;
-    private File currentVersionFolder;
+    private File currentVersionFolder, nativesFolder;
 
     public void createDirectories() {
         boolean alreadyExists = outputDirectory.exists();
@@ -125,23 +127,27 @@ public class Installer implements LauncherProcess {
         libraryFolder = new File(outputDirectory, "libraries");
         versionFolder = new File(outputDirectory, "versions");
         currentVersionFolder = new File(versionFolder, versionName);
+        nativesFolder = new File(currentVersionFolder, "natives");
 
         created &= assetFolder.mkdir();
         created &= libraryFolder.mkdir();
         created &= versionFolder.mkdir();
         created &= currentVersionFolder.mkdir();
+        created &= nativesFolder.mkdir();
 
         created |= outputDirectory.exists();
         created |= assetFolder.exists();
         created |= libraryFolder.exists();
         created |= versionFolder.exists();
         created |= currentVersionFolder.exists();
+        created |= nativesFolder.exists();
 
         out.printf("Creating: %s%n", outputDirectory);
         out.printf("Creating: %s%n", assetFolder);
         out.printf("Creating: %s%n", libraryFolder);
         out.printf("Creating: %s%n", versionFolder);
         out.printf("Creating: %s%n", currentVersionFolder);
+        out.printf("Creating: %s%n", nativesFolder);
 
         if (!created) {
             throw new RuntimeException("One or more folders failed to be created!");
@@ -219,22 +225,50 @@ public class Installer implements LauncherProcess {
         out.println("Now downloading libraries");
         List<JsonElement> elements = librariesJson.asList();
         elements.stream()
-                .parallel()
+//                .parallel()
                 .forEach(this::downloadJsonLibraryElement);
         out.println("Done downloading libraries!");
     }
 
     private void downloadJsonLibraryElement(JsonElement element) {
-        JsonObject object = element.getAsJsonObject();
-        if (checkLibraryRules(object.getAsJsonArray("rules"))) {
-            JsonObject downloads = object.getAsJsonObject("downloads");
-            JsonObject artifact = downloads.getAsJsonObject("artifact");
-            String path = artifact.get("path").getAsString();
-            String sha1 = artifact.get("sha1").getAsString();
-            long size = artifact.get("size").getAsLong();
-            String urlPath = artifact.get("url").getAsString();
-            String name = object.get("name").getAsString();
-            downloadLibrary(path, sha1, size, urlPath, name);
+        JsonObject object = null;
+        try {
+            object = element.getAsJsonObject();
+            if (checkLibraryRules(object.getAsJsonArray("rules"))) {
+                JsonObject downloads = object.getAsJsonObject("downloads");
+                JsonObject artifact = downloads.getAsJsonObject("artifact");
+                String path;
+                String sha1;
+                long size;
+                String urlPath;
+                String name = object.get("name").getAsString();
+                if (artifact != null) {
+                    path = artifact.get("path").getAsString();
+                    sha1 = artifact.get("sha1").getAsString();
+                    size = artifact.get("size").getAsLong();
+                    urlPath = artifact.get("url").getAsString();
+                    downloadLibrary(path, sha1, size, urlPath, name);
+                }
+
+                // downloading native libraries
+                // I'm getting tortured.
+                JsonObject natives = object.getAsJsonObject("natives");
+                if (natives != null) {
+                    String classifier = natives.get(OperatingSystem.detectOperatingSystem().name).getAsString();
+                    classifier = classifier.replace("${arch}", System.getProperty("os.arch").replaceAll("[a-zA-Z]", ""));
+                    JsonObject classifiers = downloads.getAsJsonObject("classifiers");
+                    JsonObject nativeArtifact = classifiers.getAsJsonObject(classifier);
+                    path = nativeArtifact.get("path").getAsString();
+                    sha1 = nativeArtifact.get("sha1").getAsString();
+                    size = nativeArtifact.get("size").getAsLong();
+                    urlPath = nativeArtifact.get("url").getAsString();
+                    File nativeLib = downloadLibrary(path, sha1, size, urlPath, name);
+                    extractToNatives(nativeLib, object);
+                }
+            }
+        } catch (Exception ex) {
+            out.println(object);
+            throw new RuntimeException("Failed to download library!", ex);
         }
     }
 
@@ -244,28 +278,24 @@ public class Installer implements LauncherProcess {
                 JsonObject object = element.getAsJsonObject();
                 String action = object.get("action").getAsString();
                 JsonObject os = object.getAsJsonObject("os");
-                JsonElement osName = os.get("name");
-                JsonElement osArch = os.get("arch");
-                if (action.equalsIgnoreCase("allow")) {
+                if (os != null) {
+                    JsonElement osName = os.get("name");
+                    JsonElement osArch = os.get("arch");
                     boolean osNameAllowed = osName == null;
                     boolean osArchAllowed = osArch == null;
                     if (osName != null) {
-                        switch (osName.getAsString()) {
-                            case "osx" ->
-                                    osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("mac");
-                            case "linux" ->
-                                    osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("nux");
-                            case "windows" ->
-                                    osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
-                            default -> throw new IllegalStateException("Unexpected OS name: " + osName);
-                        }
+                        osNameAllowed = osName.getAsString().equals(OperatingSystem.detectOperatingSystem().name);
                     }
                     if (osArch != null) {
                         osArchAllowed = System.getProperty("os.arch").equalsIgnoreCase(osArch.getAsString());
                     }
-                    return osNameAllowed && osArchAllowed;
-                } else {
-                    throw new IllegalStateException("Unexpected action: " + action);
+                    if (action.equalsIgnoreCase("allow")) {
+                        return osNameAllowed && osArchAllowed;
+                    } else if (action.equalsIgnoreCase("disallow")) {
+                        return !(osNameAllowed && osArchAllowed);
+                    } else {
+                        throw new IllegalStateException("Unexpected action: " + action);
+                    }
                 }
             }
         }
@@ -273,7 +303,30 @@ public class Installer implements LauncherProcess {
         return true;
     }
 
-    private void downloadLibrary(String path, String sha1, long size, String urlPath, String name) {
+    private void extractToNatives(File nativeLib, JsonObject downloadObject) {
+        JsonObject extract = downloadObject.getAsJsonObject("extract");
+        JsonArray exclude = extract.getAsJsonArray("exclude");
+        List<String> excludedItems = exclude.asList().stream().map(JsonElement::getAsString).toList();
+        try {
+            ZipFile file = new ZipFile(nativeLib);
+            file.stream()
+                .filter(e -> {
+                    for (String excluded : excludedItems) {
+                        if (e.getName().contains(excluded)) return false;
+                    }
+                    return !e.isDirectory();
+                }).forEach(e -> {
+                    try (InputStream inputStream = file.getInputStream(e)) {
+                        File dest = new File(nativesFolder, e.getName());
+                        copyStreamToFile(inputStream, dest);
+                    } catch (IOException ex) {
+                        throw new RuntimeException("Error while extracting native file!", ex);
+                    }
+                });
+        } catch (IOException e) { }
+    }
+
+    private File downloadLibrary(String path, String sha1, long size, String urlPath, String name) {
         URL url;
         try {
             url = new URL(urlPath);
@@ -286,8 +339,8 @@ public class Installer implements LauncherProcess {
         File folderDest = folderDestPath.toFile();
         folderDest.mkdirs();
         if (dest.exists() && checkFileIntegrity(dest, size, sha1, SHA1_ALGORITHM)) {
-            out.printf("%s is already downloaded and verified!%n", name);
-            return;
+            out.printf("%s is already downloaded and verified (%s)!%n", name, path);
+            return dest;
         }
         for (int i = 0; i < DOWNLOAD_ATTEMPTS && !checkFileIntegrity(dest, size, sha1, SHA1_ALGORITHM); i++) {
             try {
@@ -296,7 +349,8 @@ public class Installer implements LauncherProcess {
                 throw new RuntimeException("Error in downloading " + name, e);
             }
         }
-        out.printf("%s downloaded and verified!%n", name);
+        out.printf("%s downloaded and verified! (%s)%n", name, path);
+        return dest;
     }
 
     private File assetJsonDest;
@@ -306,7 +360,7 @@ public class Installer implements LauncherProcess {
         JsonObject assetIndex = clientObject.getAsJsonObject("assetIndex");
         String sha1 = assetIndex.get("sha1").getAsString();
         long size = assetIndex.get("size").getAsLong();
-        int id = assetIndex.get("id").getAsInt();
+        String id = assetIndex.get("id").getAsString();
         String urlPath = assetIndex.get("url").getAsString();
         URL url;
         try {

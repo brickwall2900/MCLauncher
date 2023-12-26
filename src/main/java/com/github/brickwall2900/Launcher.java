@@ -1,9 +1,6 @@
 package com.github.brickwall2900;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import com.google.gson.*;
 
 import java.io.File;
 import java.io.IOException;
@@ -23,6 +20,7 @@ public class Launcher implements LauncherProcess {
     private Scanner in = new Scanner(System.in);
 
     // wooo time to freeload Minecraft!
+    // this is why you should be creative in pirating games!
     public void run(String[] args) {
         init(args);
         initFiles();
@@ -105,11 +103,18 @@ public class Launcher implements LauncherProcess {
                 checkJavaVersion(javaVersion);
             }
             String version = object.get("id").getAsString();
-            JsonObject arguments = object.getAsJsonObject("arguments");
             out.printf("%s: Reading game arguments%n", jsonFile);
-            readGameArguments(arguments);
+            JsonObject arguments = object.getAsJsonObject("arguments");
+            if (arguments != null) {
+                readGameArguments(arguments);
+            } else {
+                JsonPrimitive argumentsOld = object.getAsJsonPrimitive("minecraftArguments");
+                readGameArgumentsOld(argumentsOld.getAsString());
+            }
             out.printf("%s: Reading JVM arguments%n", jsonFile);
-            readJVMArguments(arguments);
+            if (arguments != null) {
+                readJVMArguments(arguments);
+            }
             JsonArray libraries = object.getAsJsonArray("libraries");
             out.printf("%s: Reading classpath%n", jsonFile);
             readClassPath(version, libraries);
@@ -125,6 +130,8 @@ public class Launcher implements LauncherProcess {
 
     /*
      * I still miss her...
+     * OH THIS IS ON GITHUB???
+     * update: not really anymore...
      */
 
     private Map<String, String> gameArguments, jvmArguments;
@@ -172,6 +179,24 @@ public class Launcher implements LauncherProcess {
                     String value = element.getAsString();
                     this.gameArguments.put(name, value);
                 }
+            }
+        }
+    }
+
+    private void readGameArgumentsOld(String minecraftArguments) {
+        if (minecraftArguments != null) {
+            if (gameArguments == null) {
+                gameArguments = new HashMap<>();
+            }
+
+            // string manipulation shit
+            // okay I'll assume minecraftArguments *always* has a total of an even number
+            // when split into whitespace
+            String[] arguments = minecraftArguments.split(" ");
+            for (int j = 0; j < arguments.length; j += 2) {
+                String name = arguments[j];
+                String value = arguments[j + 1];
+                this.gameArguments.put(name, value);
             }
         }
     }
@@ -267,28 +292,24 @@ public class Launcher implements LauncherProcess {
                 JsonObject object = element.getAsJsonObject();
                 String action = object.get("action").getAsString();
                 JsonObject os = object.getAsJsonObject("os");
-                JsonElement osName = os.get("name");
-                JsonElement osArch = os.get("arch");
-                if (action.equalsIgnoreCase("allow")) {
+                if (os != null) {
+                    JsonElement osName = os.get("name");
+                    JsonElement osArch = os.get("arch");
                     boolean osNameAllowed = osName == null;
                     boolean osArchAllowed = osArch == null;
                     if (osName != null) {
-                        switch (osName.getAsString()) {
-                            case "osx" ->
-                                    osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("mac");
-                            case "linux" ->
-                                    osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("nux");
-                            case "windows" ->
-                                    osNameAllowed = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
-                            default -> throw new IllegalStateException("Unexpected OS name: " + osName);
-                        }
+                        osNameAllowed = osName.getAsString().equals(OperatingSystem.detectOperatingSystem().name);
                     }
                     if (osArch != null) {
                         osArchAllowed = System.getProperty("os.arch").equalsIgnoreCase(osArch.getAsString());
                     }
-                    return osNameAllowed && osArchAllowed;
-                } else {
-                    throw new IllegalStateException("Unexpected action: " + action);
+                    if (action.equalsIgnoreCase("allow")) {
+                        return osNameAllowed && osArchAllowed;
+                    } else if (action.equalsIgnoreCase("disallow")) {
+                        return !(osNameAllowed && osArchAllowed);
+                    } else {
+                        throw new IllegalStateException("Unexpected action: " + action);
+                    }
                 }
             }
         }
@@ -309,12 +330,14 @@ public class Launcher implements LauncherProcess {
                 JsonObject downloads = object.getAsJsonObject("downloads");
                 if (downloads != null) {
                     JsonObject artifact = downloads.getAsJsonObject("artifact");
-                    String path = artifact.get("path").getAsString();
-                    File jarFile = new File(gameDirectory, "libraries" + File.separatorChar + path);
-                    if (!jarFile.exists()) {
-                        throw new NullPointerException("Library: " + jarFile + " not found!");
+                    if (artifact != null) {
+                        String path = artifact.get("path").getAsString();
+                        File jarFile = new File(gameDirectory, "libraries" + File.separatorChar + path);
+                        if (!jarFile.exists()) {
+                            throw new NullPointerException("Library: " + jarFile + " not found!");
+                        }
+                        classPath.add(jarFile);
                     }
-                    classPath.add(jarFile);
                 } else { // iF 'DownloadS' is nULL, TheN thIs MIgHt wORk RiGhT?
                     String name = object.get("name").getAsString();
                     String[] comp = name.split(":");
@@ -356,12 +379,15 @@ public class Launcher implements LauncherProcess {
 //        } else {
 //            gameArguments.put("--assetIndex", version);
 //        }
-        gameArguments.put("--assetIndex", "5"); // ..?
+        JsonObject assetIndex = clientJson.getAsJsonObject("assetIndex");
+//        gameArguments.put("--assetIndex", "5"); // ..?
+        gameArguments.put("--assetIndex", assetIndex.get("id").getAsString());
         gameArguments.put("--versionType", clientJson.get("type").getAsString());
     }
 
     private void preJVMSetArguments(JsonObject clientJson) {
         out.println("Setting some JVM arguments...");
+        if (jvmArguments == null) jvmArguments = new HashMap<>();
         String version = clientJson.get("id").getAsString();
         File natives = new File(gameDirectory, "versions" + File.separatorChar + version + File.separatorChar + "natives");
         String path;
