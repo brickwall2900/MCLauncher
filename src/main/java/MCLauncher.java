@@ -7,13 +7,15 @@ import java.util.Map;
 
 public class MCLauncher {
     private static final Map<String, LauncherProcess> PROCESSES = new HashMap<>();
-    public static final String VERSION = "v1.1";
+    public static final String VERSION = "v1.2";
 
     public static void main(String[] args) {
+        System.out.println("Spaghetti " + VERSION);
+        System.out.println("YOU are the launcher, not me.");
         initProcesses();
         if (args.length < 1) {
             System.out.println("Processes: " + PROCESSES.keySet());
-            throw new IllegalArgumentException("Usage: MCLauncher [process] [args]");
+            throw new IllegalArgumentException("Usage: Spaghetti [process] [args]");
         }
         String processName = args[0];
         LauncherProcess process = PROCESSES.get(processName);
@@ -24,7 +26,6 @@ public class MCLauncher {
         String[] split = new String[args.length - 1];
         System.arraycopy(args, 1, split, 0, args.length - 1);
 
-        System.out.println("MCLauncher " + VERSION);
         System.out.println("Process executed: " + processName);
         process.run(split);
     }

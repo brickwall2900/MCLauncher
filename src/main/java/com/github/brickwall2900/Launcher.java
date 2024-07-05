@@ -34,8 +34,9 @@ public class Launcher implements LauncherProcess {
         startMinecraft();
     }
 
+    private String jvmPath;
     private String clientJson, username, gameDirectoryPath;
-    private String extraGameArguments, extraJVMArguments;
+    private String extraGameArguments, extraJVMArguments, extraClassPath;
     private boolean confirmAll;
 
     public void init(String[] args) {
@@ -61,13 +62,19 @@ public class Launcher implements LauncherProcess {
                 if (arg.startsWith("--extra-java-args=") || arg.startsWith("-eja=")) {
                     extraJVMArguments = arg.split("=")[1];
                 }
+                if (arg.startsWith("--add-class-path=") || arg.startsWith("-cp=")) {
+                    extraClassPath = arg.split("=")[1];
+                }// LETYS FUCKING OGOOOOOOOOOOOO
+                if (arg.startsWith("--jvm-executable=") || arg.startsWith("-jvm=")) {
+                    jvmPath = arg.split("=")[1];
+                }
             }
         } catch (ArrayIndexOutOfBoundsException e) {
             throw new IllegalArgumentException("Invalid argument at \"" + lastParsed + '\"');
         }
         if (clientJson == null || username == null || gameDirectoryPath == null) {
-            System.err.println("Usage: Launcher [--client-json=<client json file>] [--username=<player name>] [--game-directory=<.minecraft game directory>] [--extra-game-args=<extra game arguments>]? [--extra-java-args=<extra JVM arguments>]? --confirm-yes?");
-            System.err.println(" ..or: Launcher [-client=<client json file>] [--name=<player name>] [-game-dir=<.minecraft game directory>] [-ega=<extra game arguments>]? [-eja=<extra JVM arguments>]? -y?");
+            System.err.println("Usage: Launcher [--client-json=<client json file>] [--username=<player name>] [--game-directory=<.minecraft game directory>] [--extra-game-args=<extra game arguments>]? [--extra-java-args=<extra JVM arguments>]? [--jvm-executable=<java executable path>]? [--add-class-path=<added class path>]? --confirm-yes?");
+            System.err.println(" ..or: Launcher [-client=<client json file>] [-name=<player name>] [-game-dir=<.minecraft game directory>] [-ega=<extra game arguments>]? [-eja=<extra JVM arguments>]? [-jvm=<java executable path>]? [-cp=<added class path>]? -y?");
             System.err.println("'?' means this is optional.");
             throw new NullPointerException("One or more arguments are missing!");
         }
@@ -139,11 +146,21 @@ public class Launcher implements LauncherProcess {
     private String mainClass;
 
     private void checkJavaVersion(JsonObject javaVersionJson) {
-        int minecraft = javaVersionJson.get("majorVersion").getAsInt();
-        int java = getJavaVersion();
-        out.printf("You're running on Java %d. Minecraft requires Java %d or higher.%n", java, minecraft);
-        if (minecraft > java) {
-            throw new UnsupportedClassVersionError("Incompatible Java version for the chosen Minecraft client! (" + minecraft + " > " + java + ")");
+        JsonElement version = javaVersionJson.get("majorVersion");
+        int minecraft;
+        if (version == null) {
+            version = javaVersionJson.get("version");
+        }
+        minecraft = version.getAsInt();
+        if (jvmPath == null) {
+            int java = getJavaVersion();
+            out.printf("You're running on Java %d. Minecraft requires Java %d or higher.%n", java, minecraft);
+            if (minecraft > java) {
+                throw new UnsupportedClassVersionError("Incompatible Java version for the chosen Minecraft client! (" + minecraft + " > " + java + ")");
+            }
+        } else {
+            out.println("Too lazy to check Java versions from different JVMs :\\");
+            out.printf("Minecraft requires Java %d or higher.%n", minecraft);
         }
     }
 
@@ -380,8 +397,15 @@ public class Launcher implements LauncherProcess {
 //            gameArguments.put("--assetIndex", version);
 //        }
         JsonObject assetIndex = clientJson.getAsJsonObject("assetIndex");
+        JsonPrimitive id = null;
+        if (assetIndex != null) {
+            id = assetIndex.getAsJsonPrimitive("id");
+        }
+        if (id == null) {
+            id = clientJson.getAsJsonPrimitive("id");
+        }
 //        gameArguments.put("--assetIndex", "5"); // ..?
-        gameArguments.put("--assetIndex", assetIndex.get("id").getAsString());
+        gameArguments.put("--assetIndex", id.getAsString());
         gameArguments.put("--versionType", clientJson.get("type").getAsString());
     }
 
@@ -461,14 +485,18 @@ public class Launcher implements LauncherProcess {
             }
         }
 
-        String classPathList = classPath.stream().map(f -> {
+        List<String> classPathList = new ArrayList<>(classPath.stream().map(f -> {
             try {
                 return f.getCanonicalFile();
             } catch (IOException e) {
                 return f;
             }
-        }).map(File::toString).reduce("", (result, file) -> '\"' + file + "\";" + result);
-        jvmArguments.put("-cp", classPathList);
+        }).map(File::toString).toList());
+        if (extraClassPath != null) {
+            classPathList.addAll(List.of(extraClassPath.split(";")));
+        }
+        String classPath = classPathList.stream().reduce("", (result, file) -> '\"' + file + "\";" + result);
+        jvmArguments.put("-cp", classPath);
 
         jvmArguments.put("-Dminecraft.launcher.brand", "minecraft-launcher");
         jvmArguments.put("-Dminecraft.launcher.version", "2.3.173");
@@ -517,7 +545,8 @@ public class Launcher implements LauncherProcess {
         builder = new ProcessBuilder();
         builder.directory(gameDirectory);
         List<String> allArguments = new ArrayList<>();
-        String jvmPath = getJavaVM();
+        String jvmPath = this.jvmPath == null ? getJavaVM() : this.jvmPath;
+        out.println("JVM: " + jvmPath);
         allArguments.add(jvmPath);
         allArguments.addAll(jvmArgumentList);
         allArguments.add(mainClass);

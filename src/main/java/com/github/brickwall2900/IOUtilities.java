@@ -1,7 +1,10 @@
 package com.github.brickwall2900;
 
 import java.io.*;
+import java.net.ConnectException;
+import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLConnection;
 import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -9,7 +12,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 public class IOUtilities {
-    public static final int DOWNLOAD_ATTEMPTS = 10;
+    public static final int DOWNLOAD_ATTEMPTS = 10, MAVEN_DOWNLOAD_ATTEMPTS = 2;
+    public static final int HTTP_OKAY = 200;
+
     private IOUtilities() { throw new UnsupportedOperationException("No IOUtilities for you!"); }
 
     /**
@@ -46,9 +51,17 @@ public class IOUtilities {
      * @throws IOException on URL connect or file write failure
      */
     public static void downloadToFile(URL url, File dest) throws IOException {
-        try (BufferedInputStream srcStream = new BufferedInputStream(url.openStream());
-             BufferedOutputStream destStream = new BufferedOutputStream(new FileOutputStream(dest))) {
-            srcStream.transferTo(destStream);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setRequestMethod("GET");
+        connection.connect();
+        int response = connection.getResponseCode();
+        if (response == HTTP_OKAY) {
+            try (BufferedInputStream srcStream = new BufferedInputStream(connection.getInputStream());
+                 BufferedOutputStream destStream = new BufferedOutputStream(new FileOutputStream(dest))) {
+                srcStream.transferTo(destStream);
+            }
+        } else {
+            throw new ConnectException("HTTP " + response);
         }
     }
 
@@ -59,8 +72,16 @@ public class IOUtilities {
      * @throws IOException on URL connect failure
      */
     public static String downloadToString(URL url) throws IOException {
-        try (BufferedInputStream srcStream = new BufferedInputStream(url.openStream())) {
-            return new String(srcStream.readAllBytes());
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setRequestMethod("GET");
+        connection.connect();
+        int response = connection.getResponseCode();
+        if (response == HTTP_OKAY) {
+            try (BufferedInputStream srcStream = new BufferedInputStream(connection.getInputStream())) {
+                return new String(srcStream.readAllBytes());
+            }
+        } else {
+            throw new ConnectException("HTTP " + response);
         }
     }
 
@@ -117,6 +138,22 @@ public class IOUtilities {
         } catch (NoSuchAlgorithmException | IOException e) {
             throw new RuntimeException("Error checking the file integrity of " + file + "!", e);
         }
+    }
+
+    /**
+     * Checks the file's integrity based on the given parameters excluding size with multiple hashes
+     * @param file input file to be verified
+     * @param hashes correct hashes of file
+     * @param algorithm algorithm for checking file hashes
+     * @return {@code true} if the file matches the parameters, {@code false} otherwise
+     * @throws RuntimeException on error while checking
+     */
+    public static boolean checkFileIntegrity(File file, String[] hashes, String algorithm) {
+        boolean result = false;
+        for (String hash : hashes) {
+            result |= checkFileIntegrity(file, hash, algorithm);
+        }
+        return result;
     }
 
 

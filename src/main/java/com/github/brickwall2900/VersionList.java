@@ -72,7 +72,7 @@ public class VersionList implements LauncherProcess {
         out.println("'+' and '-', and a number increases and decreases the number of versions shown in a page");
         out.println("'=' to set the page directly");
         out.println("Enter a number to choose the version.");
-        while (chosenVersion <= 0) {
+        while (chosenVersion < 0) {
             readVersionPage();
             readAndExecuteCommand();
         }

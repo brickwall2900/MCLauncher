@@ -4,10 +4,21 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+//import com.squareup.tools.maven.resolution.*;
+//import kotlin.Pair;
+//import okhttp3.OkHttpClient;
+//import okio.Okio;
+//import org.apache.maven.model.Repository;
+//import org.apache.maven.model.RepositoryPolicy;
+//import org.apache.maven.model.building.DefaultModelBuilderFactory;
+//import org.apache.maven.model.resolution.ModelResolver;
 
 import java.io.*;
 import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -37,11 +48,17 @@ public class Installer implements LauncherProcess {
     private Scanner in = new Scanner(System.in);
 
     private boolean confirmAll, skipAssetDownload;
+    private boolean replaceLibraries, skipFailedLibraries;
     private File clientJsonFile;
     private File outputDirectory;
     public void run(String[] args) {
         init(args);
         confirm();
+        proc();
+        finish();
+    }
+
+    public void proc() {
         readJson();
         createDirectories();
         copyFiles();
@@ -52,7 +69,6 @@ public class Installer implements LauncherProcess {
             readAssetJson();
             downloadAllAssets();
         }
-        finish();
     }
 
     public void init(String[] args) {
@@ -62,6 +78,8 @@ public class Installer implements LauncherProcess {
                 lastParsed = arg;
                 if (arg.equalsIgnoreCase("-y") || arg.equalsIgnoreCase("--confirm-yes")) confirmAll = true;
                 if (arg.equalsIgnoreCase("-sa") || arg.equalsIgnoreCase("--skip-assets")) skipAssetDownload = true;
+                if (arg.equalsIgnoreCase("-rl") || arg.equalsIgnoreCase("--replace-library")) replaceLibraries = true;
+                if (arg.equalsIgnoreCase("-sfl") || arg.equalsIgnoreCase("--skip-failed-libraries")) skipFailedLibraries = true;
                 if (arg.startsWith("--client-json=") || arg.startsWith("-client=")) {
                     clientJsonFile = new File(arg.split("=")[1]);
                 }
@@ -74,8 +92,8 @@ public class Installer implements LauncherProcess {
         }
 
         if (clientJsonFile == null || outputDirectory == null) {
-            System.err.println("Usage: Installer [--client-json=<client json file>] [--out-directory=<output game directory>] --confirm-yes? --skip-assets?");
-            System.err.println(" ..or: Installer [-client=<client json file>] [-dir=<output game directory>] -y? -sa?");
+            System.err.println("Usage: Installer [--client-json=<client json file>] [--out-directory=<output game directory>] --confirm-yes? --skip-assets? --replace-library? --skip-failed-libraries?");
+            System.err.println(" ..or: Installer [-client=<client json file>] [-dir=<output game directory>] -y? -sa? -rl? -sfl?");
             System.err.println("'?' means this is optional.");
             throw new NullPointerException("One or more arguments are missing!");
         }
@@ -88,6 +106,12 @@ public class Installer implements LauncherProcess {
         }
         if (skipAssetDownload) {
             out.println("Skipping asset downloads! May result in missing resources!");
+        }
+        if (replaceLibraries) {
+            out.println("Re-downloading and replacing game libraries!");
+        }
+        if (skipFailedLibraries) {
+            out.println("Skipping failed library downloads, this may result in the game failing to launch.");
         }
     }
 
@@ -156,11 +180,14 @@ public class Installer implements LauncherProcess {
 
     private File clientJsonDest;
     public void copyFiles() {
-        out.println("Copying client.json");
+        clientJsonDest = new File(currentVersionFolder, versionName + ".json");
         try {
-            copySingleFile(clientJsonFile, clientJsonDest = new File(currentVersionFolder, versionName + ".json"));
+            if (!clientJsonDest.exists()) {
+                out.println("Copying " + clientJsonFile);
+                copySingleFile(clientJsonFile, clientJsonDest);
+            }
         } catch (IOException e) {
-            throw new RuntimeException("Error copying client.jar!", e);
+            throw new RuntimeException("Error copying client.json!", e);
         }
     }
 
@@ -174,15 +201,32 @@ public class Installer implements LauncherProcess {
     private String versionName;
 
     public void readJson() {
-        out.println("Read initial members of client.json");
+        File clientJsonFile = new File(this.clientJsonFile.getAbsolutePath());
+        out.println("Read initial members of " + clientJsonFile);
         try {
-            clientElement = JsonParser.parseString(readFileToString(clientJsonFile));
+            JsonElement clientElement = JsonParser.parseString(readFileToString(clientJsonFile));
             clientObject = clientElement.getAsJsonObject();
-            downloadsJson = clientObject.getAsJsonObject("downloads");
-            clientDownloadJson = downloadsJson.getAsJsonObject("client");
 
             versionName = clientObject.get("id").getAsString();
             out.println("Version: " + versionName);
+
+            JsonElement inheritsFrom = clientObject.get("inheritsFrom");
+            boolean hasParent = inheritsFrom != null;
+            if (hasParent) {
+                String version = inheritsFrom.getAsString();
+                out.println("Inherits from: " + version);
+                this.clientJsonFile = new File(outputDirectory, "versions" + File.separatorChar + version + File.separatorChar + version + ".json");
+                proc();
+                // restore state
+                this.clientJsonFile = clientJsonFile;
+                clientObject = clientElement.getAsJsonObject();
+                versionName = clientObject.get("id").getAsString();
+                out.println("Now installing " + versionName);
+            }
+            downloadsJson = clientObject.getAsJsonObject("downloads");
+            if (downloadsJson != null) {
+                clientDownloadJson = downloadsJson.getAsJsonObject("client");
+            }
 
             librariesJson = clientObject.getAsJsonArray("libraries");
         } catch (IOException e) {
@@ -194,6 +238,7 @@ public class Installer implements LauncherProcess {
 
     // FIRST TRY LETS FUCKING GO1!!!!!
     public void downloadClient() {
+        if (clientDownloadJson == null) return;
         out.println("Downloading client.jar");
         String urlPath = clientDownloadJson.get("url").getAsString();
         long size = clientDownloadJson.get("size").getAsLong();
@@ -225,7 +270,7 @@ public class Installer implements LauncherProcess {
         out.println("Now downloading libraries");
         List<JsonElement> elements = librariesJson.asList();
         elements.stream()
-//                .parallel()
+                .parallel()
                 .forEach(this::downloadJsonLibraryElement);
         out.println("Done downloading libraries!");
     }
@@ -236,24 +281,32 @@ public class Installer implements LauncherProcess {
             object = element.getAsJsonObject();
             if (checkLibraryRules(object.getAsJsonArray("rules"))) {
                 JsonObject downloads = object.getAsJsonObject("downloads");
-                JsonObject artifact = downloads.getAsJsonObject("artifact");
                 String path;
                 String sha1;
                 long size;
-                String urlPath;
+                String urlPath = null;
                 String name = object.get("name").getAsString();
-                if (artifact != null) {
-                    path = artifact.get("path").getAsString();
-                    sha1 = artifact.get("sha1").getAsString();
-                    size = artifact.get("size").getAsLong();
-                    urlPath = artifact.get("url").getAsString();
-                    downloadLibrary(path, sha1, size, urlPath, name);
+                if (downloads != null) {
+                    JsonObject artifact = downloads.getAsJsonObject("artifact");
+                    if (artifact != null) {
+                        path = artifact.get("path").getAsString();
+                        sha1 = artifact.get("sha1").getAsString();
+                        size = artifact.get("size").getAsLong();
+                        urlPath = artifact.get("url").getAsString();
+                        downloadLibrary(path, sha1, size, urlPath, name);
+                    }
+                } else {
+                    // what??? possibly maven?
+                    JsonElement url = object.get("url");
+                    if (url != null) urlPath = url.getAsString();
+                    JsonArray checksums = object.getAsJsonArray("checksums");
+                    downloadLibraryMaven(name, urlPath, checksums != null ? checksums.asList().stream().map(JsonElement::getAsString).toList().toArray(new String[0]) : null);
                 }
 
                 // downloading native libraries
                 // I'm getting tortured.
                 JsonObject natives = object.getAsJsonObject("natives");
-                if (natives != null) {
+                if (downloads != null && natives != null) {
                     String classifier = natives.get(OperatingSystem.detectOperatingSystem().name).getAsString();
                     classifier = classifier.replace("${arch}", System.getProperty("os.arch").replaceAll("[a-zA-Z]", ""));
                     JsonObject classifiers = downloads.getAsJsonObject("classifiers");
@@ -263,12 +316,17 @@ public class Installer implements LauncherProcess {
                     size = nativeArtifact.get("size").getAsLong();
                     urlPath = nativeArtifact.get("url").getAsString();
                     File nativeLib = downloadLibrary(path, sha1, size, urlPath, name);
-                    extractToNatives(nativeLib, object);
+                    if (nativeLib != null) {
+                        extractToNatives(nativeLib, object);
+                    }
                 }
             }
         } catch (Exception ex) {
-            out.println(object);
-            throw new RuntimeException("Failed to download library!", ex);
+            if (skipFailedLibraries) {
+                out.printf("Skipped a library since it failed to download: %s%n", ex);
+            } else {
+                throw new RuntimeException("Failed to download library!", ex);
+            }
         }
     }
 
@@ -327,18 +385,23 @@ public class Installer implements LauncherProcess {
     }
 
     private File downloadLibrary(String path, String sha1, long size, String urlPath, String name) {
-        URL url;
+        URL url = null;
         try {
             url = new URL(urlPath);
         } catch (MalformedURLException e) {
-            throw new RuntimeException("URL is somehow malformed: " + urlPath, e);
+            if (skipFailedLibraries) {
+                out.printf("Skipping %s since URL is somehow malformed: %s%n", name, urlPath);
+            } else {
+                throw new RuntimeException("URL is somehow malformed: " + urlPath, e);
+            }
         }
+        if (url == null) return null;
 
         File dest = new File(libraryFolder, path);
         Path folderDestPath = dest.toPath().getParent();
         File folderDest = folderDestPath.toFile();
         folderDest.mkdirs();
-        if (dest.exists() && checkFileIntegrity(dest, size, sha1, SHA1_ALGORITHM)) {
+        if (replaceLibraries && dest.exists() && checkFileIntegrity(dest, size, sha1, SHA1_ALGORITHM)) {
             out.printf("%s is already downloaded and verified (%s)!%n", name, path);
             return dest;
         }
@@ -346,11 +409,154 @@ public class Installer implements LauncherProcess {
             try {
                 downloadToFile(url, dest);
             } catch (IOException e) {
-                throw new RuntimeException("Error in downloading " + name, e);
+//                throw new RuntimeException("Error in downloading " + name, e);
+                if (skipFailedLibraries) {
+                    out.printf("Skipped %s since library failed to download: %s%n", name, e);
+                } else {
+                    throw new RuntimeException("Error in downloading " + name, e);
+                }
             }
         }
         out.printf("%s downloaded and verified! (%s)%n", name, path);
         return dest;
+    }
+
+    private record Repository(String url, String id) {
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            Repository that = (Repository) o;
+            return Objects.equals(url, that.url);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(url);
+        }
+    }
+
+    private void downloadLibraryMaven(String name, String urlPath, String[] checksums) {
+        Set<Repository> repositorySet = new HashSet<>();
+        repositorySet.add(new Repository("https://repo.maven.apache.org/maven2", "maven-central"));
+        Path local = FileSystems.getDefault().getPath(System.getProperty("user.home") + "/.m2/repository");
+        // ahhh fuck it
+        repositorySet.add(new Repository("https://repo1.maven.org/maven2", "maven-central2"));
+        repositorySet.add(new Repository("https://maven.minecraftforge.net", "forge"));
+        repositorySet.add(new Repository("https://maven.fabricmc.net", "fabric"));
+        repositorySet.add(new Repository("https://repo.spongepowered.org/repository/maven-public", "uhh"));
+        repositorySet.add(new Repository("https://plugins.gradle.org/m2", "help"));
+        repositorySet.add(new Repository("https://jitpack.io", "pls"));
+        repositorySet.add(new Repository("https://oss.sonatype.org/content/repositories/snapshots", "sonatype-nexus-snapshots"));
+        repositorySet.add(new Repository("http://repository.ow2.org/nexus/content/repositories/snapshots", "ow2-snapshot"));
+//        repositorySet.add(newRepo(local.toUri().toString(), "local"));
+
+        if (urlPath != null) {
+            repositorySet.add(new Repository(urlPath, "add"));
+        }
+        List<Repository> repositoryList = repositorySet.stream().toList();
+        // arghhh kotlin lol
+//        ArtifactFetcher fetcher = new HttpArtifactFetcher(local, new OkHttpClient());
+//        ModelResolver modelResolver = new SimpleHttpResolver(local, fetcher, repositoryList, false);
+//        ArtifactResolver artifactResolver = new ArtifactResolver(false, local, fetcher, new DefaultModelBuilderFactory(), repositoryList, modelResolver);
+        try {
+//            Artifact artifact = artifactResolver.artifactFor(name);
+//            ResolvedArtifact pom = artifactResolver.resolveArtifact(artifact);
+            File artifactFile;
+            String path = mavenArtifactToPath(name, File.separatorChar), file = mavenArtifactToFile(name), urlMavenPath = mavenArtifactToPath(name, '/');
+//            if (pom != null) {
+//                FetchStatus fetchStatus = artifactResolver.downloadArtifact(pom);
+//                if (!(fetchStatus.getClass().getName().contains("SUCCESSFUL"))) { // fucking hack it's 2:09 am ahhhhhhhhhhhhhhhhhh
+//                    out.println("Artifact " + name + " from repositry download failed.");
+//                     Caused by: java.lang.RuntimeException: Artifact org.ow2.asm:asm-all:5.0.3 download failed: com.squareup.tools.maven.resolution.FetchStatus$RepositoryFetchStatus$SUCCESSFUL$FOUND_IN_CACHE@708dd22a
+//                     I wanna commit suicide
+//                    out.println("Downloading the other way...");
+//                    artifactFile = pomNonExistant(name, repositoryList, urlMavenPath, file, checksums);
+//                } else {
+//                    artifactFile = pom.getMain().getLocalFile().toFile();
+//                }
+//            } else {
+                artifactFile = pomNonExistant(name, repositoryList, urlMavenPath, file, checksums);
+//            }
+            File dest = new File(libraryFolder, path + File.separatorChar + file + ".jar");
+//            out.printf("[dbg] Dest: %s%n", dest);
+            Path folderDestPath = dest.toPath().getParent();
+            File folderDest = folderDestPath.toFile();
+            folderDest.mkdirs();
+            if (dest.exists()) {
+                if (replaceLibraries && checksums != null && checkFileIntegrity(dest, checksums, SHA1_ALGORITHM)) {
+                    out.printf("%s is already downloaded and verified (%s)!%n", name, path);
+                    return;
+                } else if (replaceLibraries) {
+                    out.printf("%s has been downloaded and verified (%s)!%n", name, path);
+                } else {
+                    out.printf("Cannot determine file integrity on %s since checksum doesn't exist (%s). Replacing file anyway.%n", name, path);
+                }
+            }
+
+            if (!artifactFile.exists()) _breakpoint();
+            copySingleFile(artifactFile, dest);
+            out.printf("%s downloaded and verified! (%s)%n", name, path);
+        } catch (IOException e) {
+            if (skipFailedLibraries) {
+                out.printf("Skipped %s since library failed to download: %s%n", name, e);
+            } else {
+                throw new RuntimeException("Error in downloading " + name, e);
+            }
+        }
+    }
+
+    private File pomNonExistant(String name, Iterable<Repository> repositoryList, String urlMavenPath, String file, String[] checksums) throws IOException {
+//        out.println("POM for " + name + " is non-existant!");
+        File tmp = File.createTempFile(name.replace(":", "_"), null);
+        tmp.createNewFile();
+        Map<Repository, Exception> exceptionMap = new HashMap<>();
+        for (Repository repository : repositoryList) {
+            String base = repository.url();
+            String finalPath = base + "/" + urlMavenPath + "/" + file + ".jar";
+            URL url = new URL(finalPath);
+            for (int i = 0; i < MAVEN_DOWNLOAD_ATTEMPTS; i++) {
+                try {
+                    downloadToFile(url, tmp);
+                    if (checksums != null && checkFileIntegrity(tmp, checksums, SHA1_ALGORITHM)) {
+                        out.printf("Successfully downloaded from %s! (%s)%n", name, url);
+                    } else {
+                        out.printf("Did we download the correct file from %s? Cannot determine file integrity. (%s)%n", name, url);
+                    }
+                    return tmp;
+                } catch (IOException e) {
+                    exceptionMap.put(repository, e);
+//                    out.printf("*** NOT A FATAL ERROR... yet. *** Error in downloading artifact %s! (%s)%n", name, e);
+                }
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("Unable to download library file ").append(name).append(" from any repositories!\n");
+        for (Map.Entry<Repository, Exception> entry : exceptionMap.entrySet()) {
+            sb.append(entry.getKey().url).append(": ").append(entry.getValue()).append('\n');
+        }
+        throw new IOException(sb.toString());
+    }
+
+    private String mavenArtifactToPath(String artifact, char delimiter) {
+        String[] colonSplit = artifact.split(":");
+        String[] packageSplit = colonSplit[0].split("\\.");
+        StringBuilder stringBuilder = new StringBuilder();
+        for (int i = 0; i < packageSplit.length; i++) {
+            stringBuilder.append(packageSplit[i]).append(delimiter);
+        }
+        for (int i = 1; i < colonSplit.length; i++) {
+            stringBuilder.append(colonSplit[i]);
+            if (i < colonSplit.length - 1) stringBuilder.append(delimiter);
+        }
+        return stringBuilder.toString();
+    }
+
+    private String mavenArtifactToFile(String artifact) {
+        String[] colonSplit = artifact.split(":");
+        StringBuilder stringBuilder = new StringBuilder();
+        stringBuilder.append(colonSplit[1]).append('-').append(colonSplit[2]);
+        return stringBuilder.toString();
     }
 
     private File assetJsonDest;
@@ -358,33 +564,38 @@ public class Installer implements LauncherProcess {
     public void downloadAssetJson() {
         out.println("Downloading assets.json");
         JsonObject assetIndex = clientObject.getAsJsonObject("assetIndex");
-        String sha1 = assetIndex.get("sha1").getAsString();
-        long size = assetIndex.get("size").getAsLong();
-        String id = assetIndex.get("id").getAsString();
-        String urlPath = assetIndex.get("url").getAsString();
-        URL url;
-        try {
-            url = new URL(urlPath);
-        } catch (MalformedURLException e) {
-            throw new RuntimeException("asset.json URL is malformed!", e);
-        }
-
-        assetJsonDest = new File(assetFolder, "indexes" + File.separatorChar + id + ".json");
-        Path folderDestPath = assetJsonDest.toPath().getParent();
-        File folderDest = folderDestPath.toFile();
-        folderDest.mkdirs();
-        if (assetJsonDest.exists() && checkFileIntegrity(assetJsonDest, size, sha1, SHA1_ALGORITHM)) {
-            out.println("asset.json is already downloaded and verified!");
-            return;
-        }
-        for (int i = 0; i < DOWNLOAD_ATTEMPTS && !checkFileIntegrity(assetJsonDest, size, sha1, SHA1_ALGORITHM); i++) {
+        if (assetIndex != null) {
+            String sha1 = assetIndex.get("sha1").getAsString();
+            long size = assetIndex.get("size").getAsLong();
+            String id = assetIndex.get("id").getAsString();
+            String urlPath = assetIndex.get("url").getAsString();
+            URL url;
             try {
-                downloadToFile(url, assetJsonDest);
-            } catch (IOException e) {
-                throw new RuntimeException("Error in downloading asset.json!", e);
+                url = new URL(urlPath);
+            } catch (MalformedURLException e) {
+                throw new RuntimeException("asset.json URL is malformed!", e);
             }
+
+            assetJsonDest = new File(assetFolder, "indexes" + File.separatorChar + id + ".json");
+            Path folderDestPath = assetJsonDest.toPath().getParent();
+            File folderDest = folderDestPath.toFile();
+            folderDest.mkdirs();
+            if (assetJsonDest.exists() && checkFileIntegrity(assetJsonDest, size, sha1, SHA1_ALGORITHM)) {
+                out.println("asset.json is already downloaded and verified!");
+                return;
+            }
+            for (int i = 0; i < DOWNLOAD_ATTEMPTS && !checkFileIntegrity(assetJsonDest, size, sha1, SHA1_ALGORITHM); i++) {
+                try {
+                    downloadToFile(url, assetJsonDest);
+                } catch (IOException e) {
+                    throw new RuntimeException("Error in downloading asset.json!", e);
+                }
+            }
+            out.println("asset.json downloaded and verified!");
+        } else {
+            out.println("Assets are non-existant!");
+            assetJsonDest = null; // assetJsonDest set to null for checking
         }
-        out.println("asset.json downloaded and verified!");
     }
 
     private File assetObjectDir;
@@ -395,6 +606,7 @@ public class Installer implements LauncherProcess {
     private Map<String, JsonElement> assetObjectMap;
 
     public void readAssetJson() {
+        if (assetJsonDest == null) return;
         assetObjectDir = new File(assetFolder, "objects");
         try {
             assetJsonElement = JsonParser.parseString(readFileToString(assetJsonDest));
@@ -406,6 +618,7 @@ public class Installer implements LauncherProcess {
     }
 
     public void downloadAllAssets() {
+        if (assetJsonDest == null) return;
         out.printf("Downloading %d assets!%n", assetObjectMap.size());
         AtomicLong size = new AtomicLong();
         Thread downloadThread = startAssetDownloadThread(size);
@@ -475,5 +688,6 @@ public class Installer implements LauncherProcess {
 
     public void finish() {
         out.println("Minecraft " + versionName + " is done installing!");
+        System.exit(0);
     }
 }
