@@ -18,6 +18,9 @@ java {
 
 repositories {
     mavenCentral()
+    maven {
+        url = uri("https://libraries.minecraft.net")
+    }
 }
 
 dependencies {
@@ -25,7 +28,12 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
 
     implementation("com.google.code.gson:gson:2.10.1")
-
+    implementation("com.mojang:brigadier:1.1.8")
+    implementation("org.jline:jline:3.26.3")
+    implementation("org.jline:jansi:3.26.3")
+    implementation("org.jline:jansi-core:3.26.3")
+    implementation("org.jline:jline-reader:3.26.3")
+    implementation("org.fusesource.jansi:jansi:2.4.1")
 }
 
 tasks.test {

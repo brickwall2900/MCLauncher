@@ -22,8 +22,8 @@ public class VersionList implements LauncherProcess {
         instance.run(args);
     }
 
-    private PrintStream out = System.out;
-    private Scanner in = new Scanner(System.in);
+    public PrintStream out = System.out;
+    public UserReader in = new UserReader.ScannerReader(System.in);
 
     public void run(String[] args) {
         init(args);
@@ -33,10 +33,15 @@ public class VersionList implements LauncherProcess {
     }
 
     private String path;
+    private boolean confirmAll;
 
     public void init(String[] args) {
         for (String arg : args) {
             if (arg.startsWith("-p=") || arg.startsWith("--path=")) path = arg.split("=")[1];
+            if (arg.equalsIgnoreCase("-y") || arg.equalsIgnoreCase("--confirm-yes")) confirmAll = true;
+        }
+        if (confirmAll) {
+            out.println("Confirming 'yes' to all questions!");
         }
     }
 
@@ -70,7 +75,9 @@ public class VersionList implements LauncherProcess {
     public void chooseVersion() {
         out.println("'<' and '>' to navigate between versions.");
         out.println("'+' and '-', and a number increases and decreases the number of versions shown in a page");
-        out.println("'=' to set the page directly");
+        out.println("'=' to jump to a page");
+        out.println("':' to specify version with version name");
+        out.println("Commands are typed out like this: (expression)(value (optional))");
         out.println("Enter a number to choose the version.");
         while (chosenVersion < 0) {
             readVersionPage();
@@ -103,44 +110,70 @@ public class VersionList implements LauncherProcess {
         }
     }
 
+    private boolean checkYesOrNo(String prompt) {
+        String next = in.readInput(prompt);
+        return !confirmAll && (next.equalsIgnoreCase("yes") || next.equalsIgnoreCase("y"));
+    }
+
+    /**
+     * Finds the index with the specified version ID
+     * @param id Version ID
+     * @return index to the version ID, returns -1 if cannot be found
+     */
+    private int findIndexWithName(String id) {
+        return versionJsonElementList.stream()
+                .map(e -> {
+                    JsonObject object = e.getAsJsonObject();
+                    return object.get("id").getAsString();
+                }).toList().indexOf(id);
+    }
+
     private void readAndExecuteCommand() {
         int size = versionJsonElementList.size();
         int deltaPage = 0;
         int deltaVersionPerPage = 0;
         boolean changedDirectly = false;
-        out.print("Command: ");
-        String command = in.nextLine();
-        String noExpression = command.substring(1);
+        String command = in.readInput("Command: ");
+        // this hurts my head now I'm looking back
+        String input = command.substring(1);
         if (command.startsWith("<")) {
-            deltaPage = -getInt(noExpression, 10);
+            deltaPage = -getInt(input, 10);
         } else if (command.startsWith(">")) {
-            deltaPage = getInt(noExpression, 10);
+            deltaPage = getInt(input, 10);
         } else if (command.startsWith("+")) {
-            deltaVersionPerPage = getInt(noExpression, 1);
+            deltaVersionPerPage = getInt(input, 1);
         } else if (command.startsWith("-")) {
-            deltaVersionPerPage = -getInt(noExpression, 1);
+            deltaVersionPerPage = -getInt(input, 1);
         } else if (command.startsWith("=")) {
             changedDirectly = true;
-            page = getInt(command, 0);
+            page = getInt(input, 0);
         } else if (command.startsWith(":")) {
-            int index = versionJsonElementList.stream()
-                    .map(e -> {
-                        JsonObject object = e.getAsJsonObject();
-                        return object.get("id").getAsString();
-                    }).toList().indexOf(noExpression);
-            if (index > 0) {
+            int index = findIndexWithName(input);
+            if (index >= 0) {
                 changedDirectly = true;
                 page = index;
             } else {
-                out.println("Version " + noExpression + " not found!");
+                out.println("Version " + input + " not found!");
             }
         } else {
             try {
                 chosenVersion = Integer.parseInt(command);
+                if (chosenVersion >= 0 && chosenVersion < versionJsonElementList.size()) {
+                    JsonElement element = versionJsonElementList.get(chosenVersion);
+                    JsonObject object = element.getAsJsonObject();
+
+                    String version = object.get("id").getAsString();
+                    if (!checkYesOrNo(String.format("Version %s was chosen, continue? ", version))) {
+                        chosenVersion = -1;
+                    }
+                } else {
+                    out.println("Invalid version chosen!");
+                }
             } catch (NumberFormatException e) {
                 out.println("Invalid number!");
             }
         }
+        page = Math.max(0, Math.min(page, versionJsonElementList.size() - 1));
         if (!changedDirectly) {
             page = Math.max(Math.min(page + deltaPage, size), 0);
         }
@@ -161,7 +194,7 @@ public class VersionList implements LauncherProcess {
         if (path == null) {
             out.println("--path not specified.");
             out.print("Input directory: ");
-            path = in.nextLine();
+            path = in.readInput();
         }
 
         URL url;

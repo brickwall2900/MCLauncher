@@ -15,18 +15,12 @@ import com.google.gson.JsonParser;
 
 import java.io.*;
 import java.net.MalformedURLException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.FileSystems;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.jar.JarFile;
 import java.util.zip.ZipFile;
 
 import static com.github.brickwall2900.IOUtilities.*;
@@ -44,13 +38,14 @@ public class Installer implements LauncherProcess {
     // bad programming practice!! - don't do this
     // ==========================================
 
-    private PrintStream out = System.out;
-    private Scanner in = new Scanner(System.in);
+    public PrintStream out = System.out;
+    public UserReader in = new UserReader.ScannerReader(System.in);
 
     private boolean confirmAll, skipAssetDownload;
     private boolean replaceLibraries, skipFailedLibraries;
     private File clientJsonFile;
     private File outputDirectory;
+
     public void run(String[] args) {
         init(args);
         confirm();
@@ -115,17 +110,16 @@ public class Installer implements LauncherProcess {
         }
     }
 
-    private boolean checkYesOrNo() {
-        String next = in.nextLine();
+    private boolean checkYesOrNo(String prompt) {
+        String next = in.readInput(prompt);
         return !confirmAll && (next.equalsIgnoreCase("yes") || next.equalsIgnoreCase("y"));
     }
 
     public void confirm() {
         if (!confirmAll) {
-            out.print("Are you sure you want to create a Minecraft instance " +
+            if (checkYesOrNo("Are you sure you want to create a Minecraft instance " +
                     "(or do you even own the game?)" +
-                    "? (yes/no) ");
-            if (checkYesOrNo()) {
+                    "? (yes/no) ")) {
                 out.println("Creating...");
             } else {
                 System.exit(0);
@@ -133,15 +127,14 @@ public class Installer implements LauncherProcess {
         }
     }
 
-
     private File assetFolder, libraryFolder, versionFolder;
+
     private File currentVersionFolder, nativesFolder;
 
     public void createDirectories() {
         boolean alreadyExists = outputDirectory.exists();
         if (!confirmAll && alreadyExists) {
-            out.print("Output directory is not empty! Continue? (yes/no) ");
-            if (!checkYesOrNo()) {
+            if (!checkYesOrNo("Output directory is not empty! Continue? (yes/no) ")) {
                 throw new IllegalArgumentException("Output directory is not empty!");
             }
         }
@@ -177,8 +170,8 @@ public class Installer implements LauncherProcess {
             throw new RuntimeException("One or more folders failed to be created!");
         }
     }
-
     private File clientJsonDest;
+
     public void copyFiles() {
         clientJsonDest = new File(currentVersionFolder, versionName + ".json");
         try {
@@ -191,11 +184,11 @@ public class Installer implements LauncherProcess {
         }
     }
 
-
     private JsonElement clientElement;
-    private JsonObject clientObject;
 
+    private JsonObject clientObject;
     private JsonObject downloadsJson, clientDownloadJson;
+
     private JsonArray librariesJson;
 
     private String versionName;
@@ -235,8 +228,8 @@ public class Installer implements LauncherProcess {
     }
 
     private File clientJarDest;
-
     // FIRST TRY LETS FUCKING GO1!!!!!
+
     public void downloadClient() {
         if (clientDownloadJson == null) return;
         out.println("Downloading client.jar");
@@ -365,12 +358,11 @@ public class Installer implements LauncherProcess {
         JsonObject extract = downloadObject.getAsJsonObject("extract");
         JsonArray exclude = extract.getAsJsonArray("exclude");
         List<String> excludedItems = exclude.asList().stream().map(JsonElement::getAsString).toList();
-        try {
-            ZipFile file = new ZipFile(nativeLib);
+        try (ZipFile file = new ZipFile(nativeLib);) {
             file.stream()
                 .filter(e -> {
                     for (String excluded : excludedItems) {
-                        if (e.getName().contains(excluded)) return false;
+                        return !e.getName().contains(excluded);
                     }
                     return !e.isDirectory();
                 }).forEach(e -> {
@@ -416,6 +408,9 @@ public class Installer implements LauncherProcess {
                     throw new RuntimeException("Error in downloading " + name, e);
                 }
             }
+        }
+        if (!checkFileIntegrity(dest, size, sha1, SHA1_ALGORITHM)) {
+            out.printf("Cannot check file integrety for %s!%n", name);
         }
         out.printf("%s downloaded and verified! (%s)%n", name, path);
         return dest;
@@ -490,7 +485,7 @@ public class Installer implements LauncherProcess {
                 } else if (replaceLibraries) {
                     out.printf("%s has been downloaded and verified (%s)!%n", name, path);
                 } else {
-                    out.printf("Cannot determine file integrity on %s since checksum doesn't exist (%s). Replacing file anyway.%n", name, path);
+                    out.printf("Cannot determine file integrity on %s since checksum doesn't exist/match (%s). Replacing file anyway.%n", name, path);
                 }
             }
 
@@ -542,8 +537,8 @@ public class Installer implements LauncherProcess {
         String[] colonSplit = artifact.split(":");
         String[] packageSplit = colonSplit[0].split("\\.");
         StringBuilder stringBuilder = new StringBuilder();
-        for (int i = 0; i < packageSplit.length; i++) {
-            stringBuilder.append(packageSplit[i]).append(delimiter);
+        for (String string : packageSplit) {
+            stringBuilder.append(string).append(delimiter);
         }
         for (int i = 1; i < colonSplit.length; i++) {
             stringBuilder.append(colonSplit[i]);
@@ -554,9 +549,7 @@ public class Installer implements LauncherProcess {
 
     private String mavenArtifactToFile(String artifact) {
         String[] colonSplit = artifact.split(":");
-        StringBuilder stringBuilder = new StringBuilder();
-        stringBuilder.append(colonSplit[1]).append('-').append(colonSplit[2]);
-        return stringBuilder.toString();
+        return colonSplit[1] + '-' + colonSplit[2];
     }
 
     private File assetJsonDest;
@@ -688,6 +681,5 @@ public class Installer implements LauncherProcess {
 
     public void finish() {
         out.println("Minecraft " + versionName + " is done installing!");
-        System.exit(0);
     }
 }

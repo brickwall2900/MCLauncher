@@ -96,6 +96,24 @@ public class IOUtilities {
     }
 
     /**
+     * Reads a stream and writes to a string
+     * @param stream input stream
+     * @return read contents of the stream
+     * @throws IOException if it dies
+     */
+    public static String copyStreamToString(InputStream stream) throws IOException {
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(stream), BUFFER_SIZE)) {
+            String inputLine;
+            StringBuilder string = new StringBuilder();
+
+            while ((inputLine = in.readLine()) != null) {
+                string.append(inputLine);
+            }
+            return string.toString();
+        }
+    }
+
+    /**
      * Checks if the file's contents isn't empty
      * @param file input file
      * @return {@code true} if the file isn't empty, otherwise {@code false}
@@ -171,7 +189,7 @@ public class IOUtilities {
     public static byte[] getHash(File file, String algorithm) throws NoSuchAlgorithmException, IOException {
         MessageDigest digest = MessageDigest.getInstance(algorithm);
         byte[] buffer = new byte[BUFFER_SIZE];
-        try (BufferedInputStream input = new BufferedInputStream(new FileInputStream(file))) {
+        try (BufferedInputStream input = new BufferedInputStream(new FileInputStream(file), BUFFER_SIZE)) {
             int len = input.read(buffer);
 
             while (len != -1) {

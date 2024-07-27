@@ -7,7 +7,7 @@ import java.util.Map;
 
 public class MCLauncher {
     private static final Map<String, LauncherProcess> PROCESSES = new HashMap<>();
-    public static final String VERSION = "v1.2.1";
+    public static final String VERSION = "v1.3";
 
     public static void main(String[] args) {
         System.out.println("Spaghetti " + VERSION);
@@ -15,7 +15,9 @@ public class MCLauncher {
         initProcesses();
         if (args.length < 1) {
             System.out.println("Processes: " + PROCESSES.keySet());
-            throw new IllegalArgumentException("Usage: Spaghetti [process] [args]");
+            System.err.println("Usage: Spaghetti [process] [args]");
+            LauncherShell.INSTANCE.run(args);
+            return;
         }
         String processName = args[0];
         LauncherProcess process = PROCESSES.get(processName);
@@ -35,5 +37,6 @@ public class MCLauncher {
         PROCESSES.put("Launcher", Launcher.instance);
         PROCESSES.put("VersionList", VersionList.instance);
         PROCESSES.put("MrpackDownloader", MrpackDownloader.instance);
+        PROCESSES.put("Shell", LauncherShell.INSTANCE);
     }
 }

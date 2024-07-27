@@ -9,6 +9,7 @@ import java.util.*;
 
 import static com.github.brickwall2900.IOUtilities.*;
 
+// TODO: make this fucking interactable
 public class Launcher implements LauncherProcess {
     public static final Launcher instance = new Launcher();
 
@@ -16,8 +17,8 @@ public class Launcher implements LauncherProcess {
         instance.run(args);
     }
 
-    private PrintStream out = System.out;
-    private Scanner in = new Scanner(System.in);
+    public PrintStream out = System.out;
+    public UserReader in = new UserReader.ScannerReader(System.in);
 
     // wooo time to freeload Minecraft!
     // this is why you should be creative in pirating games!
@@ -218,8 +219,8 @@ public class Launcher implements LauncherProcess {
         }
     }
 
-    private boolean checkYesOrNo() {
-        String next = in.nextLine();
+    private boolean checkYesOrNo(String prompt) {
+        String next = in.readInput(prompt);
         return !confirmAll && (next.equalsIgnoreCase("yes") || next.equalsIgnoreCase("y"));
     }
 
@@ -233,8 +234,7 @@ public class Launcher implements LauncherProcess {
                 JsonObject featureObject = rule.getAsJsonObject("features");
                 Set<String> keys = featureObject.keySet();
                 for (String key : keys) {
-                    out.printf("Allow feature: %s? (yes/no) ", key);
-                    if (!checkYesOrNo()) {
+                    if (!checkYesOrNo(String.format("Allow feature: %s? (yes/no) ", key))) {
                         return null; // didn't allow!
                     }
                 }
@@ -398,6 +398,9 @@ public class Launcher implements LauncherProcess {
 //        }
         JsonObject assetIndex = clientJson.getAsJsonObject("assetIndex");
         JsonPrimitive id = null;
+        if (clientJson.get("assets") != null) {
+            id = clientJson.getAsJsonPrimitive("assets");
+        }
         if (assetIndex != null) {
             id = assetIndex.getAsJsonPrimitive("id");
         }
@@ -406,6 +409,7 @@ public class Launcher implements LauncherProcess {
         }
 //        gameArguments.put("--assetIndex", "5"); // ..?
         gameArguments.put("--assetIndex", id.getAsString());
+        out.printf("Asset is set to %s, I don't know if that's right, you'll have to change it later.%n", id.getAsString());
         gameArguments.put("--versionType", clientJson.get("type").getAsString());
     }
 
@@ -451,8 +455,7 @@ public class Launcher implements LauncherProcess {
             String key = entry.getKey();
             String value = entry.getValue();
             if (value.contains("${")) {
-                out.printf("%s is uninitialized yet. Enter a value for this argument (%s %s): ", key, key, value);
-                gameArguments.put(key, in.nextLine());
+                gameArguments.put(key, in.readInput(String.format("%s is uninitialized yet. Enter a value for this argument (%s %s): ", key, key, value)));
             }
         }
 
@@ -555,8 +558,7 @@ public class Launcher implements LauncherProcess {
         out.println("Final command: ");
         for (String s : allArguments) out.print(s + " ");
         out.println();
-        out.print("Are you ready to launch Minecraft? (yes/no) ");
-        if (!checkYesOrNo()) {
+        if (!checkYesOrNo("Are you ready to launch Minecraft? (yes/no) ")) {
             out.println("Okay...");
             System.exit(0);
         }
@@ -579,7 +581,7 @@ public class Launcher implements LauncherProcess {
             process = builder.inheritIO().start();
             process.waitFor();
         } catch (IOException | InterruptedException e) {
-            throw new RuntimeException("An error occured starting Minecraft!");
+            throw new RuntimeException("An error occurred starting Minecraft!");
         }
     }
 }
