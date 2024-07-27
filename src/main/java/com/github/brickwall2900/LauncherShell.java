@@ -1,5 +1,6 @@
 package com.github.brickwall2900;
 
+import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -60,6 +61,7 @@ public class LauncherShell implements LauncherProcess {
             // Very Human
             initCommands();
             print("You are in the interactive shell.");
+            // HELP DOESN'T EXIST YTE!??!!?
             print("Type 'help' for... help :p");
             while (running) {
                 try {
@@ -111,17 +113,17 @@ public class LauncherShell implements LauncherProcess {
         dispatcher.register(literal("pwd").executes(ioCommands::pwd));
 
         dispatcher.register(literal("get-version")
-                .executes(versionListCommand::run)
-                .then(argument("path", string()).executes(versionListCommand::run)));
+                .executes(versionListCommand)
+                .then(argument("path", string()).executes(versionListCommand)));
         dispatcher.register(literal("install")
-                .executes(installerCommand::run)
-                .then(argument("client", string()).executes(installerCommand::run)
-                        .then(argument("path", string()).executes(installerCommand::run))));
+                .executes(installerCommand)
+                .then(argument("client", string()).executes(installerCommand)
+                        .then(argument("path", string()).executes(installerCommand))));
         dispatcher.register(literal("launch")
-                .executes(launcherCommand::run)
-                .then(argument("client", string()).executes(launcherCommand::run)
-                        .then(argument("path", string()).executes(launcherCommand::run)
-                                .then(argument("username", string()).executes(launcherCommand::run)))));
+                .executes(launcherCommand)
+                .then(argument("client", string()).executes(launcherCommand)
+                        .then(argument("path", string()).executes(launcherCommand)
+                                .then(argument("username", string()).executes(launcherCommand)))));
     }
 
     private void onNewLine(String line) {
@@ -224,7 +226,7 @@ public class LauncherShell implements LauncherProcess {
         return string;
     }
 
-    private class InstallerCommand {
+    private class InstallerCommand implements Command<Object> {
         private final Installer installer = Installer.instance;
 
         public InstallerCommand() {
@@ -260,7 +262,7 @@ public class LauncherShell implements LauncherProcess {
         }
     }
 
-    private class VersionListCommand {
+    private class VersionListCommand implements Command<Object> {
         private final VersionList versionList = VersionList.instance;
 
         public VersionListCommand() {
@@ -286,7 +288,7 @@ public class LauncherShell implements LauncherProcess {
         }
     }
 
-    private class LauncherCommand {
+    private class LauncherCommand implements Command<Object> {
         private final Launcher launcher = Launcher.instance;;
 
         public LauncherCommand() {
